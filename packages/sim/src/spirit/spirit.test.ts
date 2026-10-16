@@ -76,21 +76,22 @@ describe('野生基因', () => {
 });
 
 describe('数值公式（DESIGN 4.3）', () => {
+  const base = content.forms.get('warmbud')!.form.baseStats;
+
   it('60 级、资质 15、中性性格：手算一致', () => {
     const s = createSpirit(content, { id: 'a', ownerId: 'p', genes: fixedGenes(), level: 60 });
-    // 暖芽：hp 55 / power 45 / guard 50 / agility 45 / resonance 55
     expect(computeStats(content, s)).toEqual({
-      hp: 55 * 2 + 15 + 60 + 10,
-      power: 45 * 2 + 15 + 5,
-      guard: 50 * 2 + 15 + 5,
-      agility: 45 * 2 + 15 + 5,
-      resonance: 55 * 2 + 15 + 5,
+      hp: base.hp * 2 + 15 + 60 + 10,
+      power: base.power * 2 + 15 + 5,
+      guard: base.guard * 2 + 15 + 5,
+      agility: base.agility * 2 + 15 + 5,
+      resonance: base.resonance * 2 + 15 + 5,
     });
   });
 
-  it('1 级生命约 12', () => {
+  it('1 级：生命 = floor((基础×2+资质)/60) + 11', () => {
     const s = createSpirit(content, { id: 'a', ownerId: 'p', genes: fixedGenes(), level: 1 });
-    expect(computeStats(content, s).hp).toBe(Math.floor(125 / 60) + 1 + 10);
+    expect(computeStats(content, s).hp).toBe(Math.floor((base.hp * 2 + 15) / 60) + 1 + 10);
   });
 
   it('性格 ±10%，不影响生命', () => {
@@ -99,8 +100,8 @@ describe('数值公式（DESIGN 4.3）', () => {
     const a = computeStats(content, neutral);
     const b = computeStats(content, reckless);
     expect(b.hp).toBe(a.hp);
-    expect(b.power).toBe(Math.floor(105 * 1.1) + 5);
-    expect(b.guard).toBe(Math.floor(115 * 0.9) + 5);
+    expect(b.power).toBe(Math.floor((base.power * 2 + 15) * 1.1) + 5);
+    expect(b.guard).toBe(Math.floor((base.guard * 2 + 15) * 0.9) + 5);
     expect(b.agility).toBe(a.agility);
   });
 });

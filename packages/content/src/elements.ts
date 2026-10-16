@@ -49,3 +49,12 @@ export const INNATE_SKILL: Readonly<Record<Element, string>> = {
   thunder: 'boltStrike',
   mist: 'mistVeil',
 };
+
+/** 每个属性的通用技能书（D35）。 */
+export const ELEMENT_BOOK_SKILL: Readonly<Record<Element, string>> = {
+  sun: 'sunflare',
+  rain: 'waterBolt',
+  wind: 'windBlade',
+  thunder: 'sparkShot',
+  mist: 'mistLash',
+};
