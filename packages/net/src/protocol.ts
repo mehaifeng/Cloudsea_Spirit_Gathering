@@ -9,8 +9,5 @@ export type ClientMessage =
 export type HostMessage =
   | { readonly type: 'result'; readonly seq: number; readonly ok: boolean; readonly error?: string }
   | { readonly type: 'events'; readonly events: readonly WorldEvent[] }
-  /**
-   * 世界快照。Loopback 直接传只读引用（零拷贝）；跨进程的传输层负责序列化。
-   * 客户端永远不能修改它（铁律 4）。
-   */
+  /** 世界快照（副本）。客户端只读，修改它也不会影响房主（铁律 4）。 */
   | { readonly type: 'snapshot'; readonly world: Readonly<WorldState> };

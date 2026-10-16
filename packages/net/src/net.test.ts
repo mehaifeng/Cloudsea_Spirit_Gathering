@@ -1,5 +1,5 @@
 import { getContent } from '@cloudsea/content';
-import { createCharacter, createWorld, joinWorld } from '@cloudsea/sim';
+import { createCharacter, createWorld, joinWorld, type WorldState } from '@cloudsea/sim';
 import { describe, expect, it } from 'vitest';
 import { ClientSession } from './client';
 import { HostSession } from './host';
@@ -28,6 +28,12 @@ describe('Loopback：单人 = 0 个客人的房主', () => {
     hostSession.update(1000);
     expect(session.world?.tick).toBe(10);
     expect(events).toContain('dayStart');
+
+    // 客户端改快照不会影响房主的世界
+    const snap = session.world as WorldState;
+    expect(snap).not.toBe(world);
+    snap.characters['p1']!.shells = 999999;
+    expect(world.characters['p1']!.shells).toBe(200);
   });
 
   it('卡顿后单帧最多补算 50 tick', () => {

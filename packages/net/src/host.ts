@@ -27,8 +27,16 @@ export class HostSession {
       const r = applyIntent(content, world, playerId, msg.intent);
       transport.send(playerId, { type: 'result', seq: msg.seq, ok: r.ok, ...(r.error ? { error: r.error } : {}) });
       if (r.events.length > 0) this.emit(r.events);
-      transport.broadcast({ type: 'snapshot', world });
+      this.broadcastSnapshot();
     });
+  }
+
+  /**
+   * 快照发的是副本：即使是同进程的 Loopback，客户端也拿不到房主正在修改的对象（铁律 4）。
+   * 快照只在 tick 推进（约 10 次 / 秒）和执行意图后发送，复制成本可以接受。
+   */
+  broadcastSnapshot(): void {
+    this.transport.broadcast({ type: 'snapshot', world: JSON.parse(JSON.stringify(this.world)) as WorldState });
   }
 
   /** 按真实流逝的毫秒推进。 */
@@ -40,7 +48,7 @@ export class HostSession {
     ticks = Math.min(ticks, MAX_TICKS_PER_UPDATE);
     const events = advanceWorld(this.content, this.world, ticks);
     if (events.length > 0) this.emit(events);
-    this.transport.broadcast({ type: 'snapshot', world: this.world });
+    this.broadcastSnapshot();
   }
 
   private emit(events: readonly WorldEvent[]): void {
