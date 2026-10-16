@@ -59,6 +59,7 @@ export function startWildBattle(content: ContentDb, world: WorldState, playerId:
       wildId,
       keeperId: null,
       aiSeed: seed,
+      preparedAi: null,
       state: createBattle(content, {
         kind: 'wild',
         sides: [{ spirits: ready }, { spirits: wild.group, wild: true }],
@@ -97,6 +98,7 @@ export function startKeeperBattle(content: ContentDb, world: WorldState, playerI
       wildId: null,
       keeperId,
       aiSeed: seed,
+      preparedAi: null,
       state: createBattle(content, {
         kind: 'keeper',
         sides: [{ spirits: ready }, { spirits: k.spirits }],
@@ -131,6 +133,7 @@ export function startTutorialBattle(content: ContentDb, world: WorldState, playe
       wildId: null,
       keeperId: null,
       aiSeed: seed,
+      preparedAi: null,
       state: createBattle(content, {
         kind: 'scripted',
         sides: [{ spirits: [partner], slots: 1 }, { spirits: [foe] }],
@@ -141,6 +144,13 @@ export function startTutorialBattle(content: ContentDb, world: WorldState, playe
     },
     events,
   );
+}
+
+function aiActions(content: ContentDb, b: ActiveBattle): SideActions {
+  if (b.kind === 'scripted') {
+    return Object.fromEntries(Object.keys(b.state.sides[1].active).map((slot) => [slot, { type: 'skill', skillId: 'jab', target: { side: 0, slot: 0 } } as BattleAction]));
+  }
+  return chooseActions(content, b.state, 1, { ...aiFor(b), seed: b.aiSeed });
 }
 
 function aiFor(b: ActiveBattle) {
@@ -181,12 +191,11 @@ export function submitBattleActions(
     }
   }
 
-  const ai =
-    b.kind === 'scripted'
-      ? Object.fromEntries(Object.keys(b.state.sides[1].active).map((slot) => [slot, { type: 'skill', skillId: 'jab', target: { side: 0, slot: 0 } } as BattleAction]))
-      : chooseActions(content, b.state, 1, { ...aiFor(b), seed: b.aiSeed });
+  const ai = b.preparedAi ?? aiActions(content, b);
   const r = resolveTurn(content, b.state, [actions, ai]);
   b.state = r.state;
+  // 听风看破了对手：下回合的选择现在就定下来并公开
+  b.preparedAi = !b.state.outcome && b.state.revealed.some((uid) => uid.startsWith('1:')) ? aiActions(content, b) : null;
   events.push({ t: 'battleTurn', playerId, battleId, events: r.events });
   if (b.state.outcome) finishBattle(content, world, b, events);
   return null;

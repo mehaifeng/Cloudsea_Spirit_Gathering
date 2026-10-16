@@ -1,5 +1,5 @@
 import type { PlannerGoal, ToolKind } from '@cloudsea/content';
-import type { BattleKind, BattleState } from '../battle/types';
+import type { BattleKind, BattleState, SideActions } from '../battle/types';
 import type { Spirit } from '../spirit/types';
 
 /** 物品袋：物品 id → 数量。占用格数 = Σ ceil(数量 / 99)。 */
@@ -142,6 +142,8 @@ export interface ActiveBattle {
   readonly keeperId: string | null;
   state: BattleState;
   readonly aiSeed: number;
+  /** 对手被“听风”看破时，房主提前定下它下回合的行动并公开（DESIGN 5.1）。 */
+  preparedAi: SideActions | null;
 }
 
 /**
