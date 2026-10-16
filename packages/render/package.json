@@ -1,0 +1,20 @@
+{
+  "name": "@cloudsea/render",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@cloudsea/content": "workspace:*",
+    "@cloudsea/sim": "workspace:*",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0"
+  }
+}

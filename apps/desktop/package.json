@@ -1,0 +1,22 @@
+{
+  "name": "@cloudsea/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "云海拾灵 Electron 桌面壳",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build && tsc -p tsconfig.main.json",
+    "start": "electron .",
+    "smoke": "pnpm build && playwright test",
+    "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.node.json"
+  },
+  "dependencies": {
+    "@cloudsea/render": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "electron": "44.7.2",
+    "vite": "8.3.4"
+  }
+}
