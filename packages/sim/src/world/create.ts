@@ -19,7 +19,7 @@ export function createCharacter(content: ContentDb, o: { id: string; name: strin
     name: o.name,
     appearance: o.appearance ?? DEFAULT_APPEARANCE,
     shells: ECONOMY.startShells,
-    backpack: { lanternDew: 5, sunWheatSeed: 6 },
+    backpack: { lanternDew: 8, sunWheatSeed: 6 },
     tools: { lantern: 1, sail: 1, gatherTool: 1 },
     spirits: {},
     party: [],

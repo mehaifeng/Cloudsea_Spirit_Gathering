@@ -231,7 +231,7 @@ describe('战斗与捕获', () => {
       act(w, { type: 'encounter', wildId: wild.id });
       const battleId = w.players['p1']!.battleId!;
       const r = act(w, { type: 'battleActions', battleId, actions: { 0: { type: 'dew', quality: 'normal', target: { side: 1, slot: 0 } } } });
-      expect(c.backpack['lanternDew']).toBe(4);
+      expect(c.backpack['lanternDew']).toBe(7);
       const end = r.events.find((e) => e.t === 'battleEnd');
       if (end?.t === 'battleEnd' && end.captured.length === 1) {
         const caught = c.spirits[end.captured[0]!]!;
