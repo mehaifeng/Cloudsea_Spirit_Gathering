@@ -6,7 +6,7 @@ import { makeTree } from './props';
 import { C, canvasTexture, lerp, mulberry } from './util';
 
 const DAY = { top: 0x5b92cf, hor: 0xf8dcc3, low: 0xfff3e6, fog: 0xf2dccb, sun: 0xffe2b8, hs: 0xdbe8ff, hg: 0x8d9a6c, hi: 0.78, sc: 0xfff0d8, si: 1.05, cl: 0xfff8ef, cs: 0xd6c3c8 };
-const NIGHT = { top: 0x0b1430, hor: 0x3b3f6c, low: 0x575d8c, fog: 0x2b3058, sun: 0x8ea6ff, hs: 0x5e6db0, hg: 0x151a2c, hi: 0.32, sc: 0x9cb2ff, si: 0.24, cl: 0x5c6392, cs: 0x272b50 };
+const NIGHT = { top: 0x0b1430, hor: 0x3b3f6c, low: 0x575d8c, fog: 0x2b3058, sun: 0x8ea6ff, hs: 0x5e6db0, hg: 0x1d2338, hi: 0.45, sc: 0x9cb2ff, si: 0.24, cl: 0x5c6392, cs: 0x272b50 };
 
 const NOISE = `float hh(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float n2(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.-2.*f);return mix(mix(hh(i),hh(i+vec2(1,0)),u.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),u.x),u.y);}
@@ -172,7 +172,15 @@ export class Environment {
       const r = Math.sqrt(rnd()) * 18;
       this.moteSeed.push([Math.cos(th) * r, rnd() * 5 + 0.3, Math.sin(th) * r, rnd() * 6]);
     }
-    this.motes = new THREE.Points(moteGeo, new THREE.PointsMaterial({ color: 0xfff2d6, size: 0.09, transparent: true, opacity: 0.6, depthWrite: false }));
+    const dot = canvasTexture((g, s) => {
+      const gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+      gr.addColorStop(0, 'rgba(255,255,255,1)');
+      gr.addColorStop(0.5, 'rgba(255,255,255,.6)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, s, s);
+    }, 32);
+    this.motes = new THREE.Points(moteGeo, new THREE.PointsMaterial({ color: 0xfff2d6, size: 0.12, map: dot, transparent: true, opacity: 0.6, depthWrite: false }));
     this.motes.frustumCulled = false;
     scene.add(this.motes);
 
@@ -188,7 +196,7 @@ export class Environment {
     const LN = 80;
     const leafGeo = new THREE.BufferGeometry();
     leafGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(LN * 3), 3));
-    this.leaves = new THREE.Points(leafGeo, new THREE.PointsMaterial({ color: 0x8fd1a8, size: 0.14, transparent: true, opacity: 0.9, depthWrite: false }));
+    this.leaves = new THREE.Points(leafGeo, new THREE.PointsMaterial({ color: 0x8fd1a8, size: 0.16, map: dot, transparent: true, opacity: 0.9, depthWrite: false }));
     this.leaves.frustumCulled = false;
     this.leaves.visible = false;
     scene.add(this.leaves);
@@ -281,12 +289,17 @@ export class Environment {
   }
 }
 
-/** 从游戏内时刻算夜晚系数（黄昏 / 黎明各有一段渐变）。tickOfDay：06:00 起算。 */
-export function nightFactor(tickOfDay: number, dayTicks = 7800, ticksPerDay = 12000, fade = 500): number {
+/**
+ * 从游戏内时刻算夜晚系数（0 = 白天，1 = 深夜）。tickOfDay 从 06:00 起算。
+ * 06:00 天已经亮了：黎明的渐变放在夜晚的最后一段，06:00 后再用 300 tick 褪去残余的晨光。
+ */
+export function nightFactor(tickOfDay: number, dayTicks = 7800, ticksPerDay = 12000): number {
   const t = tickOfDay;
-  if (t < fade) return 1 - t / fade; // 黎明
-  if (t < dayTicks - fade) return 0;
-  if (t < dayTicks + fade) return (t - (dayTicks - fade)) / (2 * fade); // 黄昏
-  if (t > ticksPerDay - fade) return 1;
-  return 1;
+  const dusk = 400;
+  const dawn = 700;
+  if (t < 300) return 0.2 * (1 - t / 300);
+  if (t < dayTicks - dusk) return 0;
+  if (t < dayTicks + dusk) return (t - (dayTicks - dusk)) / (2 * dusk);
+  if (t < ticksPerDay - dawn) return 1;
+  return 1 - 0.8 * ((t - (ticksPerDay - dawn)) / dawn);
 }
