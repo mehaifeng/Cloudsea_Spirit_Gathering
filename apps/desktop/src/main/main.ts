@@ -1,8 +1,12 @@
 import { app, BrowserWindow, shell } from 'electron';
 import { join } from 'node:path';
+import { registerSaveIpc } from './saves';
 
 // 开发时由 scripts/dev.mjs 注入；打包后加载本地文件
 const devServerUrl = process.env['CLOUDSEA_DEV_SERVER_URL'];
+/** 自动化测试：存档写到临时目录，并让页面打开测试钩子。 */
+const testMode = process.env['CLOUDSEA_TEST'] === '1';
+if (testMode) app.setPath('userData', join(app.getPath('temp'), `cloudsea-test-${process.pid}`));
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -35,11 +39,12 @@ function createWindow(): void {
   if (devServerUrl) {
     void win.loadURL(devServerUrl);
   } else {
-    void win.loadFile(join(__dirname, '..', 'dist', 'renderer', 'index.html'));
+    void win.loadFile(join(__dirname, '..', 'dist', 'renderer', 'index.html'), testMode ? { search: 'test=1' } : {});
   }
 }
 
 void app.whenReady().then(() => {
+  registerSaveIpc();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
