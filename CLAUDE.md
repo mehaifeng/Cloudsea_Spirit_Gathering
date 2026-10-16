@@ -21,7 +21,7 @@ DESIGN.md 中标〔补〕的条目是 Claude 按设计精神补的细节，视�
 - 测试：Vitest
 - 包管理：pnpm workspaces
 
-## 目录结构（计划）
+## 目录结构（计划；已建：sim、content、render、apps/desktop）
 ```
 packages/
   sim/        纯游戏逻辑：战斗（含战斗搜索 AI）、繁殖、经济、世界状态（星图 + 活跃岛实例）、存档迁移。无渲染、无 IO、无 DOM
@@ -86,7 +86,14 @@ prototype/      M0 单文件原型，只作参考，不再修改
 - 渲染相关改动：用 Playwright 截图自查（白天、夜晚、近景），截图不入库。
 
 ## 常用命令
-（项目脚手架搭好后在此补充：安装、开发、测试、打包、平衡模拟）
+- 安装：`corepack enable pnpm && pnpm install`（pnpm 版本由根 `package.json` 的 `packageManager` 固定）
+  - 本机走代理时 Electron 二进制下载会卡住，需要：`ELECTRON_GET_USE_PROXY=1 GLOBAL_AGENT_HTTPS_PROXY=$HTTPS_PROXY pnpm rebuild electron`
+- 开发：`pnpm dev`（Vite 开发服务器 + Electron 窗口，渲染端热更新）
+- 类型检查：`pnpm typecheck`
+- 单元测试：`pnpm test`（含 sim 纯度检查：禁止非相对导入、Math.random、Date 等）
+- 截图冒烟测试：`pnpm smoke`（打包后用 Playwright 启动 Electron，截图存到 `apps/desktop/screenshots/`，不入库）
+- 打包：`pnpm build`（产物在 `apps/desktop/dist` 与 `dist-electron`，安装包制作待定）
+- 平衡模拟：`tools/battle-sim` 待建（M1 第 4 步）
 
 ## 工作方式：Claude 开发，Lynx 验收
 Lynx 不参与写代码，只负责四件事：**验收输出、回归测试、需求变更、关键决策**。因此：

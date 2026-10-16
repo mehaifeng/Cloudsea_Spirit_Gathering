@@ -9,7 +9,13 @@
   - 絮灵：基因随机生成（属性、体型、耳、角、翼、尾、0/2/4/6 足），程序化骨架，同一套步态算法驱动不同腿数
   - 交互：WASD / 触屏摇杆、抚摸、跟随、唤出新絮灵、零件技能卡片
 - **设计基座 v0.3**：`DESIGN.md`。v0.2 做了三文档的一致性审查（决策 11–13）；v0.3 加入性别、疲惫改为可叠加标记、重做雾的状态异常与本源技能、层数可设持续回合（决策 14–17），并补齐若干技能细则（D17–D24）。
-- **尚未搭建工程脚手架。**
+- **M1 第 1 步脚手架完成**（仓库：https://github.com/mehaifeng/Cloudsea_Spirit_Gathering）：
+  - pnpm 11 monorepo，TypeScript 6（strict），Vite 8，Vitest 5，Electron 44，Three.js 0.186.1，zod 4；全部固定版本。
+  - `packages/sim`：种子 RNG（mulberry32，状态可存档，`deriveSeed` 派生子随机流）+ sim 纯度自动检查。
+  - `packages/content`：五属性枚举、色值、本地化键。
+  - `packages/render`：占位场景（低多边形浮岛 + 五色晶石），仅用于验证整条链路。
+  - `apps/desktop`：Electron 空壳（contextIsolation + sandbox，preload 只暴露版本信息），`pnpm dev` 热更新，`pnpm smoke` 截图冒烟测试。
+  - GitHub Actions：每次推送跑类型检查 + 单元测试。
 
 ## 已确认的决策
 | # | 决策 | 日期 |
@@ -59,6 +65,9 @@
 | D22 | 钟面流速有意不均匀（白天 1 时 ≈ 60 秒，夜晚 ≈ 38 秒），sim 只认 tick | DESIGN 3.5 |
 | D23 | 外来絮灵可以工作 | DESIGN 4.6 / 10 |
 | D24 | 双方都是双属性时，各自独立 30% 传出副属性，都传出则随机取一，与主属性相同则作废 | DESIGN 4.2 |
+| D25 | sim 的 RNG 选 mulberry32（单个 uint32 状态，易存档、易同步）；算法上线后不得更改，测试固定了参考序列 | CLAUDE 铁律 2 |
+| D26 | 各包直接导出 TS 源码（不预编译），由 Vite / Vitest 处理；主进程与 preload 单独用 tsc 编译为 CommonJS | 工程 |
+| D27 | 依赖版本优先选发布 1 周以上的版本（pnpm 11 默认也拦截过新的包）；steamworks.js、net、ai、ui 等包等到对应步骤再建，不提前放空壳 | 工程 |
 
 ## 待确认（需要 Lynx 决定）
 1. 定价区间（¥68–98 待定）。
@@ -69,7 +78,7 @@
 6. 守岛人之间的“恋人”关系是否保留（影响内容分级与对话库写法；建议保留但只到牵手级别）。
 
 ## 下一步（M1 拆解）
-1. 搭脚手架：pnpm monorepo、Vite、Vitest、Electron 空壳、CI 跑测试
+1. ~~搭脚手架：pnpm monorepo、Vite、Vitest、Electron 空壳、CI 跑测试~~（已完成）
 2. `packages/content`：物种、零件、技能的 zod schema + 晴原 5 线 15 形态初版数据（含技能云气消耗、优先级、持续回合、被动标记字段，物种含 `sexRatio`）
 3. `packages/sim`：种子 RNG → 絮灵生成与基因（含性别、双属性、性格 16 种）→ 战斗规则与伤害公式 v0.2 → 状态 / 层数 / 天候 → 捕获 → 繁殖 → 战斗 AI → 絮灵码编解码
 4. `tools/battle-sim`：自动对战统计，第一轮平衡（重点验证 1 级与 60 级的击倒回合数在 3–6 区间）
@@ -85,6 +94,7 @@
 - **范围失控**是第一风险：严格按垂直切片推进，M1 以外的功能一律记入待办，不提前做。
 - 动作手感与画面观感依赖用户试玩反馈，每个可见的改动都要附截图。
 - Electron 中的 Steam 覆盖层（overlay）需要额外处理，M2 前要先验证。
+- CI 目前只跑在 Linux 上，而且不跑截图冒烟测试；Windows 打包与 CI 截图测试待加（首发平台是 Windows）。
 - LLM 实时生成内容的合规与安全（Steam 披露、内容过滤）。
 - **多岛同时模拟**（DESIGN 9.2）是 M2 的架构核心，M1 的 sim 世界状态就要按“星图 + 活跃岛实例”建模，否则 M2 要重写。
 - 预生成对话库规模约 2.4 万条（中英），需要 `tools/content-gen` 的审核流程在 M1 就跑通。
