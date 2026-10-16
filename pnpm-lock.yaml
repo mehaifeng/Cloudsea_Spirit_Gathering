@@ -71,6 +71,12 @@ importers:
         specifier: workspace:*
         version: link:../content
 
+  packages/ui:
+    dependencies:
+      '@cloudsea/content':
+        specifier: workspace:*
+        version: link:../content
+
   tools/battle-sim:
     dependencies:
       '@cloudsea/content':
