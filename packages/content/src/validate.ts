@@ -26,6 +26,9 @@ export interface ContentDb {
   readonly parts: ReadonlyMap<string, Part>;
   readonly lines: ReadonlyMap<string, Line>;
   readonly forms: ReadonlyMap<string, FormEntry>;
+  /** 按编号索引（絮灵码解码用）。 */
+  readonly partsByNo: ReadonlyMap<number, Part>;
+  readonly formsByNo: ReadonlyMap<number, FormEntry>;
 }
 
 export class ContentError extends Error {
@@ -59,6 +62,17 @@ export function buildContent(raw: RawContent): ContentDb {
       forms.set(form.id, { form, line, index });
     });
   }
+
+  // 编号唯一
+  const dupNo = (kind: string, nos: number[]): void => {
+    const seen = new Set<number>();
+    for (const n of nos) {
+      if (seen.has(n)) issues.push(`${kind} 编号 ${n} 重复`);
+      seen.add(n);
+    }
+  };
+  dupNo('part', [...parts.values()].map((p) => p.no));
+  dupNo('form', [...forms.values()].map((f) => f.form.no));
 
   // 本源技能：每个属性一个，属性一致
   for (const el of ELEMENTS) {
@@ -101,7 +115,14 @@ export function buildContent(raw: RawContent): ContentDb {
   }
 
   if (issues.length > 0) throw new ContentError(issues);
-  return { skills, parts, lines, forms };
+  return {
+    skills,
+    parts,
+    lines,
+    forms,
+    partsByNo: new Map([...parts.values()].map((p) => [p.no, p])),
+    formsByNo: new Map([...forms.values()].map((f) => [f.form.no, f])),
+  };
 }
 
 function indexById<T extends { id: string }>(kind: string, items: readonly T[], issues: string[]): Map<string, T> {

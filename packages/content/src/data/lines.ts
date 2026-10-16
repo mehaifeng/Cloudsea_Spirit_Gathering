@@ -35,6 +35,7 @@ export const LINES: readonly LineInput[] = [
     forms: [
       {
         id: 'warmbud',
+        no: 1,
         name: '暖芽',
         stage: 'hatchling',
         baseStats: { hp: 55, power: 45, guard: 50, agility: 45, resonance: 55 },
@@ -44,6 +45,7 @@ export const LINES: readonly LineInput[] = [
       },
       {
         id: 'sheafglow',
+        no: 2,
         name: '穗光',
         stage: 'adult',
         baseStats: { hp: 75, power: 60, guard: 70, agility: 65, resonance: 80 },
@@ -53,6 +55,7 @@ export const LINES: readonly LineInput[] = [
       },
       {
         id: 'dawncrown',
+        no: 3,
         name: '曦冕',
         stage: 'lord',
         baseStats: { hp: 95, power: 75, guard: 90, agility: 85, resonance: 105 },
@@ -90,6 +93,7 @@ export const LINES: readonly LineInput[] = [
     forms: [
       {
         id: 'eavedrop',
+        no: 4,
         name: '檐滴',
         stage: 'hatchling',
         baseStats: { hp: 50, power: 55, guard: 45, agility: 50, resonance: 50 },
@@ -99,6 +103,7 @@ export const LINES: readonly LineInput[] = [
       },
       {
         id: 'eavebell',
+        no: 5,
         name: '檐铃',
         stage: 'adult',
         baseStats: { hp: 70, power: 80, guard: 60, agility: 65, resonance: 75 },
@@ -108,6 +113,7 @@ export const LINES: readonly LineInput[] = [
       },
       {
         id: 'rainchime',
+        no: 6,
         name: '霖钟',
         stage: 'lord',
         baseStats: { hp: 85, power: 105, guard: 75, agility: 80, resonance: 105 },
@@ -147,6 +153,7 @@ export const LINES: readonly LineInput[] = [
     forms: [
       {
         id: 'kitefluff',
+        no: 7,
         name: '鸢絮',
         stage: 'hatchling',
         baseStats: { hp: 45, power: 50, guard: 40, agility: 70, resonance: 45 },
@@ -156,6 +163,7 @@ export const LINES: readonly LineInput[] = [
       },
       {
         id: 'kitewing',
+        no: 8,
         name: '鸢羽',
         stage: 'adult',
         baseStats: { hp: 60, power: 70, guard: 55, agility: 100, resonance: 65 },
@@ -165,6 +173,7 @@ export const LINES: readonly LineInput[] = [
       },
       {
         id: 'skykite',
+        no: 9,
         name: '苍鸢',
         stage: 'lord',
         baseStats: { hp: 75, power: 90, guard: 70, agility: 125, resonance: 90 },
@@ -207,6 +216,7 @@ export const LINES: readonly LineInput[] = [
     forms: [
       {
         id: 'forgespark',
+        no: 10,
         name: '炉星',
         stage: 'hatchling',
         baseStats: { hp: 45, power: 65, guard: 40, agility: 55, resonance: 45 },
@@ -216,6 +226,7 @@ export const LINES: readonly LineInput[] = [
       },
       {
         id: 'hammerpeal',
+        no: 11,
         name: '锤鸣',
         stage: 'adult',
         baseStats: { hp: 60, power: 95, guard: 55, agility: 75, resonance: 65 },
@@ -225,6 +236,7 @@ export const LINES: readonly LineInput[] = [
       },
       {
         id: 'thunderanvil',
+        no: 12,
         name: '霆砧',
         stage: 'lord',
         baseStats: { hp: 75, power: 125, guard: 70, agility: 90, resonance: 90 },
@@ -263,6 +275,7 @@ export const LINES: readonly LineInput[] = [
     forms: [
       {
         id: 'hazepuff',
+        no: 13,
         name: '烟团',
         stage: 'hatchling',
         baseStats: { hp: 60, power: 40, guard: 60, agility: 40, resonance: 50 },
@@ -272,6 +285,7 @@ export const LINES: readonly LineInput[] = [
       },
       {
         id: 'lakeveil',
+        no: 14,
         name: '湖纱',
         stage: 'adult',
         baseStats: { hp: 85, power: 55, guard: 85, agility: 55, resonance: 70 },
@@ -281,6 +295,7 @@ export const LINES: readonly LineInput[] = [
       },
       {
         id: 'mirrormist',
+        no: 15,
         name: '镜雾',
         stage: 'lord',
         baseStats: { hp: 110, power: 70, guard: 110, agility: 65, resonance: 95 },

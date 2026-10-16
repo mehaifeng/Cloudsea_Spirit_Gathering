@@ -5,6 +5,7 @@ export const PARTS: readonly PartInput[] = [
   // ---------- 耳 ----------
   {
     id: 'pointedEars',
+    no: 1,
     name: '尖耳',
     slot: 'ears',
     skill: 'windListen',
@@ -15,6 +16,7 @@ export const PARTS: readonly PartInput[] = [
   },
   {
     id: 'floppyEars',
+    no: 2,
     name: '垂耳',
     slot: 'ears',
     skill: 'softEarRest',
@@ -25,6 +27,7 @@ export const PARTS: readonly PartInput[] = [
   },
   {
     id: 'roundEars',
+    no: 3,
     name: '圆耳',
     slot: 'ears',
     skill: 'roundEarHum',
@@ -37,6 +40,7 @@ export const PARTS: readonly PartInput[] = [
   // ---------- 角 ----------
   {
     id: 'singleHorn',
+    no: 4,
     name: '独角',
     slot: 'horns',
     skill: 'hornRush',
@@ -44,6 +48,7 @@ export const PARTS: readonly PartInput[] = [
   },
   {
     id: 'twinHorns',
+    no: 5,
     name: '双角',
     slot: 'horns',
     skill: 'twinHornQuake',
@@ -53,6 +58,7 @@ export const PARTS: readonly PartInput[] = [
   // ---------- 翼 ----------
   {
     id: 'featherWings',
+    no: 6,
     name: '羽翼',
     slot: 'wings',
     skill: 'wingBeat',
@@ -66,6 +72,7 @@ export const PARTS: readonly PartInput[] = [
   // ---------- 尾 ----------
   {
     id: 'fluffTail',
+    no: 7,
     name: '绒尾',
     slot: 'tail',
     skill: 'fluffGuard',
@@ -76,6 +83,7 @@ export const PARTS: readonly PartInput[] = [
   },
   {
     id: 'finTail',
+    no: 8,
     name: '鳍尾',
     slot: 'tail',
     skill: 'finWave',
@@ -85,6 +93,7 @@ export const PARTS: readonly PartInput[] = [
   // ---------- 足 ----------
   {
     id: 'cloudFeet',
+    no: 9,
     name: '浮云足',
     slot: 'feet',
     skill: 'floating',
@@ -96,6 +105,7 @@ export const PARTS: readonly PartInput[] = [
   },
   {
     id: 'twoFeet',
+    no: 10,
     name: '双足',
     slot: 'feet',
     skill: 'hop',
@@ -107,6 +117,7 @@ export const PARTS: readonly PartInput[] = [
   },
   {
     id: 'fourFeet',
+    no: 11,
     name: '四足',
     slot: 'feet',
     skill: 'pounce',
@@ -115,6 +126,7 @@ export const PARTS: readonly PartInput[] = [
   },
   {
     id: 'sixFeet',
+    no: 12,
     name: '六足',
     slot: 'feet',
     skill: 'swiftStride',

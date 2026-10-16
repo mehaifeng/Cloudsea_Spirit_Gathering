@@ -10,6 +10,8 @@ export type PartSlot = z.infer<typeof partSlotSchema>;
 export const partSchema = z
   .strictObject({
     id: z.string().regex(/^[a-z][A-Za-z0-9]*$/),
+    /** 稳定编号（1 起），絮灵码依赖它，发布后不能改。 */
+    no: z.int().min(1).max(15),
     name: z.string().min(1).max(6),
     slot: partSlotSchema,
     /** 零件携带的技能 id。 */

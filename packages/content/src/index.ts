@@ -1,5 +1,6 @@
 export * from './ailments';
 export * from './elements';
+export * from './natures';
 export * from './parts';
 export * from './skills';
 export * from './species';
