@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-electron/
+out/
+coverage/
+.DS_Store
+*.log
+.vite/
+# Playwright 截图不入库（CLAUDE.md 测试要求）
+test-results/
+playwright-report/
+screenshots/
+.env
+.env.*
