@@ -1,0 +1,22 @@
+{
+  "name": "cloudsea-spirit-gathering",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.28.6",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r --parallel typecheck && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "pnpm --filter @cloudsea/desktop dev",
+    "build": "pnpm --filter @cloudsea/desktop build",
+    "smoke": "pnpm --filter @cloudsea/desktop smoke"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "6.0.3",
+    "vitest": "5.0.5"
+  }
+}

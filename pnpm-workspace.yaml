@@ -1,0 +1,9 @@
+packages:
+  - packages/*
+  - apps/*
+  - tools/*
+
+# 允许执行安装脚本的依赖（electron 需要下载二进制）
+allowBuilds:
+  electron: true
+  esbuild: true
