@@ -92,6 +92,8 @@ export interface BattleState {
   intercepts: Record<string, string>;
   /** 被“听风”看破、下回合选择需提前公开的单位 uid。 */
   revealed: string[];
+  /** 新手引导：这一方的絮灵生命不会低于 1（DESIGN 13，脚本保证不会战败）。 */
+  readonly protectedSide: SideIndex | null;
 }
 
 export type DewQuality = 'normal' | 'refined' | 'superior';

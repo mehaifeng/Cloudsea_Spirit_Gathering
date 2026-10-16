@@ -49,8 +49,8 @@ export interface Spirit {
   readonly learnedSkills: readonly string[];
   readonly state: SpiritState;
   readonly weary: boolean;
-  /** 疲惫自然恢复的 tick。 */
-  readonly wearyUntilTick: number;
+  /** 疲惫还需休息的 tick（按地点倍速扣减：自然 1×、栖巢 2×、温泉 4×，DESIGN 4.8）。 */
+  readonly wearyRemaining: number;
   /** 通过絮灵码导入（DESIGN 10）。 */
   readonly foreign: boolean;
   /** 蚀化：捕获后需要净化。 */

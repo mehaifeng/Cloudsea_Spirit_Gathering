@@ -56,6 +56,8 @@ export interface BattleSetup {
   /** 基准天候 = 当地当前天气；室内 / 巢穴为 null。 */
   readonly baseWeather: Element | null;
   readonly seed: number;
+  /** 新手引导战斗：该方不会被击倒。 */
+  readonly protectedSide?: SideIndex;
 }
 
 function buildUnit(content: ContentDb, spirit: Spirit, side: SideIndex, index: number, wild: boolean): BattleUnit {
@@ -132,6 +134,7 @@ export function createBattle(content: ContentDb, setup: BattleSetup): BattleStat
     outcome: null,
     intercepts: {},
     revealed: [],
+    protectedSide: setup.protectedSide ?? null,
   };
 }
 
@@ -579,7 +582,8 @@ class TurnResolver {
       for (const p of target.passiveEffects) if (p.kind === 'multiTargetDamageTaken') mult *= p.multiplier;
     }
     const amount = Math.max(1, Math.floor(base * mult));
-    target.hp = Math.max(0, target.hp - amount);
+    const floor = this.s.protectedSide !== null && findUnit(this.s, target.uid).side === this.s.protectedSide ? 1 : 0;
+    target.hp = Math.max(floor, target.hp - amount);
     this.events.push({ t: 'damage', uid: actor.uid, target: target.uid, amount, crit, effectiveness: eff, hpAfter: target.hp });
     if (target.hp === 0) {
       target.downed = true;

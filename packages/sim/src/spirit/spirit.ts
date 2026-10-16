@@ -176,7 +176,7 @@ export function createSpirit(content: ContentDb, o: NewSpiritOptions): Spirit {
     learnedSkills: [] as string[],
     state: o.state ?? 'idle',
     weary: false,
-    wearyUntilTick: 0,
+    wearyRemaining: 0,
     foreign: o.foreign ?? false,
     blighted: o.blighted ?? false,
     readyAtTick: o.readyAtTick ?? 0,
