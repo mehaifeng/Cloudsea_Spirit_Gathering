@@ -40,6 +40,15 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
+  packages/net:
+    dependencies:
+      '@cloudsea/content':
+        specifier: workspace:*
+        version: link:../content
+      '@cloudsea/sim':
+        specifier: workspace:*
+        version: link:../sim
+
   packages/render:
     dependencies:
       '@cloudsea/content':
