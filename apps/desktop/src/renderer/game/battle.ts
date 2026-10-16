@@ -535,7 +535,7 @@ export class BattleView {
       tag.append(
         h('div', { class: 'row', style: 'gap:4px' }, ...unit.elements.map((e) => elementIcon(e, 14)), h('b', {}, unit.name), h('span', { class: 'muted' }, `Lv.${unit.level}`)),
         h('div', { class: `hpbar ${ratio < 0.3 ? 'low' : ''}` }, h('i', { style: `width:${Math.max(0, ratio * 100)}%` })),
-        h('div', { class: 'muted', style: 'font-size:13px' }, `${unit.hp}/${unit.maxHp}`, unit.ailment ? `  ${AILMENT_INFO[unit.ailment.id].name}` : '', unit.charging ? '  蓄力中' : '', ...stages.map(([k, n]) => `  ${STAT_LABEL[k]}${n > 0 ? '+' : ''}${n}`)),
+        h('div', { class: 'muted', style: 'font-size:14px' }, `${unit.hp}/${unit.maxHp}`, unit.ailment ? `  ${AILMENT_INFO[unit.ailment.id].name}` : '', unit.charging ? '  蓄力中' : '', ...stages.map(([k, n]) => `  ${STAT_LABEL[k]}${n > 0 ? '+' : ''}${n}`)),
       );
     }
   }

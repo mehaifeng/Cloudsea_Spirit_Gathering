@@ -60,7 +60,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #f6d7b8; use
 .party-card b { display: block; font-size: 15px; }
 #prompt { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); pointer-events: none; }
 #prompt .hud-chip { font-size: 16px; padding: 8px 16px; }
-kbd { display: inline-block; min-width: 22px; padding: 0 6px; border-radius: 6px; background: var(--ink); color: #fff; font: 600 13px/22px system-ui; text-align: center; }
+kbd { display: inline-block; min-width: 22px; padding: 0 6px; border-radius: 6px; background: var(--ink); color: #fff; font: 600 14px/22px system-ui; text-align: center; }
 #hints { position: fixed; right: 16px; bottom: 16px; font-size: 14px; color: var(--ink); background: rgba(255,250,242,.8); padding: 6px 10px; border-radius: 10px; pointer-events: none; }
 
 #toasts { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
