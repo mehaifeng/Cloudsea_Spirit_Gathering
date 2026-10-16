@@ -22,3 +22,30 @@ export const ELEMENT_INFO: Readonly<Record<Element, ElementInfo>> = {
   thunder: { name: '雷', nameKey: 'element.thunder', color: '#A77BE8' },
   mist: { name: '雾', nameKey: 'element.mist', color: '#B8BFD6' },
 };
+
+/** 相克：键克值（晴克雾 · 雾克雷 · 雷克雨 · 雨克风 · 风克晴）。 */
+export const COUNTERS: Readonly<Record<Element, Element>> = {
+  sun: 'mist',
+  mist: 'thunder',
+  thunder: 'rain',
+  rain: 'wind',
+  wind: 'sun',
+};
+
+/** 相生：键生值（雨生晴 · 晴生雷 · 雷生风 · 风生雾 · 雾生雨）。 */
+export const GENERATES: Readonly<Record<Element, Element>> = {
+  rain: 'sun',
+  sun: 'thunder',
+  thunder: 'wind',
+  wind: 'mist',
+  mist: 'rain',
+};
+
+/** 每个属性自带的本源技能（DESIGN 4.4）。双属性絮灵只带主属性的本源技能。 */
+export const INNATE_SKILL: Readonly<Record<Element, string>> = {
+  sun: 'dawnlight',
+  rain: 'downpour',
+  wind: 'whirl',
+  thunder: 'boltStrike',
+  mist: 'mistVeil',
+};
