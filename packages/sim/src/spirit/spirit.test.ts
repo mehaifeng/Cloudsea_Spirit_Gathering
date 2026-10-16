@@ -14,7 +14,7 @@ import {
   passiveSkills,
   skillPool,
 } from './spirit';
-import type { Genes } from './types';
+import type { Genes, Spirit } from './types';
 
 const content = getContent();
 const line = (id: string) => content.lines.get(id)!;
@@ -140,7 +140,7 @@ describe('技能池与零件', () => {
     const s = createSpirit(content, { id: 'a', ownerId: 'p', genes: fixedGenes(), level: 5 });
     expect(equipSkills(content, s, ['hop', 'hop'])).toBeTypeOf('string');
     expect(equipSkills(content, s, ['boltStrike'])).toBeTypeOf('string');
-    expect((equipSkills(content, s, ['hop']) as { skillSlots: string[] }).skillSlots).toEqual(['hop']);
+    expect((equipSkills(content, s, ["hop"]) as Spirit).skillSlots).toEqual(['hop']);
   });
 });
 
