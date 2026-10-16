@@ -66,6 +66,10 @@ prototype/      M0 单文件原型，只作参考，不再修改
   - 云气 = `qi`，天候（战斗）= `fieldWeather`，天气（世界）= `weather`，守岛人（AI）= `keeper`，灯塔 = `lighthouse`，云主 = `cloudlord`
   - 云贝 = `shells`，灵饰 = `charm`，基因码 = `gene code`
   - 性别 = `sex`（雄 `male` / 雌 `female`），雄性比例 = `sexRatio`；疲惫标记 = `weary`（可与其他状态并存）
+  - 大区 = `region`：晴原 `sunPlains` / 风谷 `windValley` / 雨泽 `rainMarsh` / 雷崖 `thunderCliff` / 雾海 `mistSea`
+  - 稀有度 = `rarity`：常见 `common` / 少见 `uncommon` / 稀有 `rare` / 极稀 `veryRare`；形态 = `form`，种族值 = `baseStats`，零件池 = `partPool`，刷新规则 = `spawns`
+  - 五项属性 = `stats`：生命 `hp` / 力量 `power` / 守护 `guard` / 灵巧 `agility` / 共鸣 `resonance`；命中 `accuracy`，闪避 `evasion`；异化 = `mutation`
+  - 工作类型 = `workTask`：种植 `planting` / 烘烤 `baking` / 灌溉 `irrigation` / 酿造 `brewing` / 风车 `windmill` / 运输 `transport` / 发电 `power` / 锻造 `smithing` / 储藏 `storage` / 调香 `perfumery`
   - 守岛人：`keeper` **只指 AI 守岛人**；玩家 = `player`（世界观里两者都叫守岛人）
   - 蚀雾 = `blight`，蚀化（的）= `blighted`，净化 = `purify`，净化池 = `purifyPool`（蚀雾与雾属性 `mist` 无关）
   - 相克 = `counters`，相生 = `generates`（A generates B），连携 = `synergy`，本属性加成 = `affinityBonus`
