@@ -12,11 +12,17 @@
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {
-    "@cloudsea/render": "workspace:*"
+    "@cloudsea/content": "workspace:*",
+    "@cloudsea/net": "workspace:*",
+    "@cloudsea/render": "workspace:*",
+    "@cloudsea/sim": "workspace:*",
+    "@cloudsea/ui": "workspace:*",
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "electron": "44.7.2",
-    "vite": "8.3.4"
+    "vite": "8.3.4",
+    "@types/three": "0.186.0"
   }
 }

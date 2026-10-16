@@ -1,0 +1,130 @@
+:root {
+  --bg: #fff8ef;
+  --panel: rgba(255, 250, 242, 0.94);
+  --panel-edge: #e8d6bd;
+  --ink: #4a3b55;
+  --ink-soft: #7d6d86;
+  --accent: #e07a5f;
+  --accent-2: #f3b94d;
+  --good: #5cc8a0;
+  --bad: #d9534f;
+  --shadow: 0 8px 28px rgba(74, 59, 85, 0.18);
+  --radius: 14px;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
+  font-size: 15px;
+  color: var(--ink);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #f6d7b8; user-select: none; }
+#scene { display: block; width: 100%; height: 100%; outline: none; }
+#ui { position: fixed; inset: 0; pointer-events: none; }
+#ui > * { pointer-events: auto; }
+.hidden { display: none !important; }
+
+.btn {
+  font: inherit; color: var(--ink); background: #fff; border: 2px solid var(--panel-edge);
+  border-radius: 10px; padding: 7px 14px; cursor: pointer; min-height: 36px;
+  display: inline-flex; align-items: center; gap: 6px; transition: transform .08s, border-color .1s, background .1s;
+}
+.btn:hover, .btn:focus-visible, .btn:focus { border-color: var(--accent); outline: none; background: #fff6ec; }
+.btn:active { transform: scale(.97); }
+.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.primary:focus, .btn.primary:hover { background: #ea8a70; }
+.btn[aria-disabled='true'] { opacity: .45; cursor: default; }
+.btn.small { padding: 4px 10px; min-height: 30px; font-size: 14px; }
+.btn.selected { border-color: var(--accent-2); background: #fff3d6; }
+
+.panel {
+  background: var(--panel); border: 2px solid var(--panel-edge); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 16px 18px;
+}
+.panel h2 { margin: 0 0 10px; font-size: 20px; letter-spacing: .05em; }
+.panel h3 { margin: 12px 0 6px; font-size: 16px; }
+.muted { color: var(--ink-soft); font-size: 14px; }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.col { display: flex; flex-direction: column; gap: 8px; }
+.grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.badge { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px 1px 5px; border-radius: 999px; font-size: 14px; background: color-mix(in srgb, var(--c, #ccc) 22%, white); border: 1px solid var(--c, #ccc); }
+.icon { display: inline-flex; vertical-align: -3px; }
+.tag { font-size: 14px; padding: 1px 6px; border-radius: 6px; background: #f1e6d6; }
+.tag.warn { background: #fbe0dc; color: #a33; }
+.tag.good { background: #dcf4ea; color: #2a7a5a; }
+
+/* HUD */
+#hud-tl, #hud-tr { position: fixed; top: 14px; display: flex; gap: 8px; align-items: center; pointer-events: none; }
+#hud-tl { left: 16px; }
+#hud-tr { right: 16px; }
+.hud-chip { background: rgba(255, 250, 242, 0.88); border: 2px solid var(--panel-edge); border-radius: 999px; padding: 5px 12px; display: inline-flex; gap: 6px; align-items: center; font-size: 15px; }
+#party-bar { position: fixed; left: 16px; bottom: 16px; display: flex; gap: 8px; pointer-events: none; }
+.party-card { background: rgba(255, 250, 242, 0.9); border: 2px solid var(--panel-edge); border-radius: 12px; padding: 6px 10px; min-width: 96px; font-size: 14px; }
+.party-card b { display: block; font-size: 15px; }
+#prompt { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); pointer-events: none; }
+#prompt .hud-chip { font-size: 16px; padding: 8px 16px; }
+kbd { display: inline-block; min-width: 22px; padding: 0 6px; border-radius: 6px; background: var(--ink); color: #fff; font: 600 13px/22px system-ui; text-align: center; }
+#hints { position: fixed; right: 16px; bottom: 16px; font-size: 14px; color: var(--ink); background: rgba(255,250,242,.8); padding: 6px 10px; border-radius: 10px; pointer-events: none; }
+
+#toasts { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
+.toast { background: rgba(74, 59, 85, 0.9); color: #fff; padding: 8px 16px; border-radius: 999px; font-size: 15px; animation: toast-in .2s ease-out; }
+.toast.error { background: rgba(190, 70, 60, 0.92); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } }
+
+/* 模态窗口 */
+#modal { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(74, 59, 85, 0.25); }
+#modal > .panel { width: min(920px, 94vw); max-height: 86vh; overflow: auto; }
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.close-x { float: right; }
+
+.spirit-card { background: #fff; border: 2px solid var(--panel-edge); border-radius: 12px; padding: 8px 10px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.spirit-card:focus, .spirit-card:hover { border-color: var(--accent); outline: none; }
+.spirit-card.selected { border-color: var(--accent-2); background: #fff3d6; }
+.statbar { height: 8px; background: #efe4d6; border-radius: 4px; overflow: hidden; }
+.statbar > i { display: block; height: 100%; background: var(--accent-2); }
+.kv { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; font-size: 14px; }
+
+/* 对话框 */
+#dialogue { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); width: min(760px, 92vw); }
+#dialogue .panel { cursor: pointer; }
+#dialogue .who { font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+#dialogue .line { font-size: 17px; line-height: 1.6; min-height: 2.6em; }
+#dialogue .more { text-align: right; color: var(--ink-soft); font-size: 14px; }
+
+/* 战斗 */
+#battle-ui { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+#battle-log { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); width: min(560px, 90vw); text-align: center; pointer-events: none; }
+#battle-log .line { background: rgba(255,250,242,.92); border-radius: 10px; padding: 6px 12px; margin-bottom: 4px; font-size: 16px; }
+.unit-tags { position: fixed; inset: 0; pointer-events: none; }
+.unit-tag { position: absolute; transform: translate(-50%, -100%); background: rgba(255,250,242,.92); border: 2px solid var(--panel-edge); border-radius: 10px; padding: 3px 8px; font-size: 14px; min-width: 120px; white-space: nowrap; }
+.unit-tag.active { border-color: var(--accent); }
+.hpbar { height: 7px; background: #efe4d6; border-radius: 4px; overflow: hidden; margin-top: 2px; }
+.hpbar > i { display: block; height: 100%; background: var(--good); transition: width .35s; }
+.hpbar.low > i { background: var(--bad); }
+.dmg { position: absolute; transform: translate(-50%, -50%); font: 800 22px system-ui; color: #fff; text-shadow: 0 2px 0 #4a3b55, 0 0 6px #4a3b55; pointer-events: none; animation: dmg 1s ease-out forwards; }
+.dmg.heal { color: #b8ffd8; }
+@keyframes dmg { to { transform: translate(-50%, -160%); opacity: 0; } }
+.qi-pips { display: inline-flex; gap: 3px; }
+.qi-pips i { width: 12px; height: 12px; border-radius: 50%; background: #e9dccb; border: 1px solid #cdb89c; }
+.qi-pips i.on { background: #8fd1f0; border-color: #4a9ac0; }
+
+/* 标题画面 */
+#title { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+#title h1 { margin: 0; font-size: 56px; letter-spacing: .3em; color: #5b4a6e; text-shadow: 0 3px 0 #fff8ef; }
+#title .sub { color: var(--ink-soft); letter-spacing: .2em; }
+#title .panel { min-width: 320px; }
+input[type=text] { font: inherit; padding: 7px 10px; border: 2px solid var(--panel-edge); border-radius: 10px; background: #fff; color: var(--ink); }
+input[type=text]:focus { border-color: var(--accent); outline: none; }
+
+/* 星图 */
+.chart { position: relative; width: 100%; height: 360px; background: radial-gradient(ellipse at center, #fff6ea, #f0e2cf); border-radius: 12px; border: 2px solid var(--panel-edge); }
+.chart .isle { position: absolute; transform: translate(-50%, -50%); }
+.chart .isle .btn { flex-direction: column; gap: 2px; padding: 6px 10px; }
+
+/* 建造 */
+#build-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(980px, 96vw); }
+#build-bar .panel { padding: 10px 12px; }
+.build-list { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.build-list .btn { flex-direction: column; align-items: flex-start; min-width: 120px; font-size: 14px; }
+
+/* 新手引导 */
+#tutorial { position: fixed; left: 16px; top: 64px; width: 300px; }
+#tutorial .panel { padding: 12px 14px; font-size: 15px; line-height: 1.6; }
+#tutorial b { color: var(--accent); }
