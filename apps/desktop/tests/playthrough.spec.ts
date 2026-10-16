@@ -108,10 +108,10 @@ test('新手引导与核心循环', async () => {
   // 3 出航、捕获
   await sail(win, 'wheatSlope');
   await win.screenshot({ path: 'screenshots/05-wheat-slope.png' });
-  for (let attempt = 0; attempt < 6 && (await g<number>(win, 'g.world().characters.p1.stats.caught')) < 1; attempt++) {
+  for (let attempt = 0; attempt < 8 && (await g<number>(win, 'g.world().characters.p1.stats.caught')) < 1; attempt++) {
     const t = await g<{ id: string; x: number; z: number } | null>(
       win,
-      `(() => { const w = Object.values(g.world().islands.wheatSlope.wild); const x = w.find((e) => !e.blighted && e.group.length === 1) || w[0]; return x ? { id: x.id, x: x.x, z: x.z } : null; })()`,
+      `(() => { const w = Object.values(g.world().islands.wheatSlope.wild).filter((e) => e.group.length === 1).sort((a, b) => a.group[0].level - b.group[0].level); const x = w[0]; return x ? { id: x.id, x: x.x, z: x.z } : null; })()`,
     );
     if (!t) break;
     await g(win, `g.teleport(${t.x}, ${t.z + 1.2})`);
@@ -208,8 +208,24 @@ test('新手引导与核心循环', async () => {
   await win.screenshot({ path: 'screenshots/15-keeper-talk.png' });
   await closeDialogues(win);
 
-  // 存档
-  await g(win, `g.act({ type: 'pause', paused: false })`);
+  // 存档 → 回到标题 → 继续：位置、絮灵、建筑都还在
+  const before = await g<{ spirits: number; buildings: number; shells: number; island: string }>(
+    win,
+    `(() => { const w = g.world(); return { spirits: Object.keys(w.characters.p1.spirits).length, buildings: Object.keys(w.homes.p1.buildings).length, shells: w.characters.p1.shells, island: w.players.p1.islandId }; })()`,
+  );
+  await win.keyboard.press('Escape');
+  await win.waitForTimeout(300);
+  await win.locator('#modal .btn', { hasText: '存档并回到标题' }).click();
+  await win.waitForTimeout(1500);
+  await win.locator('.btn', { hasText: '继续：' }).first().click();
+  await win.waitForTimeout(2500);
+  const after = await g<typeof before>(
+    win,
+    `(() => { const w = g.world(); return { spirits: Object.keys(w.characters.p1.spirits).length, buildings: Object.keys(w.homes.p1.buildings).length, shells: w.characters.p1.shells, island: w.players.p1.islandId }; })()`,
+  );
+  expect(after).toEqual(before);
+  expect(await g(win, 'g.mode()')).toBe('explore');
+  await win.screenshot({ path: 'screenshots/16-loaded.png' });
   await app.close();
   console.log(errors.join('\n'));
   expect(errors).toEqual([]);
