@@ -88,8 +88,8 @@ export class BuildMode {
     this.ghost = null;
     if (!this.selected) return;
     const def = this.content.buildings.get(this.selected)!;
-    const fp = footprint(def, this.rot);
-    this.ghost = makeBuildingView(this.selected, fp.w, fp.d, 1);
+    this.ghost = makeBuildingView(this.selected, def.size.w, def.size.d, 1);
+    this.ghost.group.rotation.y = -this.rot * (Math.PI / 2);
     this.ghost.group.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh) {

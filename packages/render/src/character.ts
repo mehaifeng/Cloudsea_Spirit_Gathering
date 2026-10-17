@@ -113,7 +113,8 @@ export class HumanoidView {
     r.add(new THREE.CylinderGeometry(0.075, 0.075, 0.36, 7), M(0, 1.44, -0.26, 0, 0, Math.PI / 2), ROLL, rigid(chest));
     this.mesh = r.build(skinMat());
     this.B = r.boneMap();
-    const scale = look.height ?? 1;
+    // 模型按约 1.95 米搭建，统一缩到尺度规范的 1.75 米（DESIGN 14.1），守岛人再乘各自的身高系数
+    const scale = 0.9 * (look.height ?? 1);
     this.mesh.scale.setScalar(scale);
     this.group.add(this.mesh);
 

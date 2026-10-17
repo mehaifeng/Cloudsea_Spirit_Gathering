@@ -9,43 +9,43 @@ export const BUILDINGS: readonly BuildingInput[] = [
   },
   {
     id: 'dock', name: '码头', kind: 'dock', description: '风帆停靠的地方。商队的订单板也在这里。',
-    size: { w: 3, d: 2 }, cost: { shells: 0, items: [] }, buildWork: 0, coreLevel: 1, starterBlueprint: false,
+    size: { w: 4, d: 3 }, cost: { shells: 0, items: [] }, buildWork: 0, coreLevel: 1, starterBlueprint: false,
     workSlots: 0, workTasks: [], countsTowardLimit: false, maxCount: 1,
   },
   {
     id: 'nest', name: '栖巢', kind: 'nest', description: '絮灵休息的小窝，每座住 4 只。在这里休息恢复疲惫更快。',
-    size: { w: 2, d: 2 }, cost: { shells: 50, items: [{ item: 'wood', count: 10 }, { item: 'stone', count: 5 }] },
+    size: { w: 3, d: 3 }, cost: { shells: 50, items: [{ item: 'wood', count: 10 }, { item: 'stone', count: 5 }] },
     buildWork: 600, coreLevel: 1, starterBlueprint: true, workSlots: 0, workTasks: [], capacity: 4, countsTowardLimit: true,
   },
   {
     id: 'field', name: '田地', kind: 'field', description: '种下种子，絮灵会帮忙照料和收获。',
-    size: { w: 2, d: 2 }, cost: { shells: 20, items: [{ item: 'wood', count: 4 }] },
+    size: { w: 3, d: 3 }, cost: { shells: 20, items: [{ item: 'wood', count: 4 }] },
     buildWork: 300, coreLevel: 1, starterBlueprint: true, workSlots: 1, workTasks: ['planting', 'irrigation'], countsTowardLimit: true,
   },
   {
     id: 'workshop', name: '工坊', kind: 'workshop', description: '把原料加工成面粉、木板、灯露……',
-    size: { w: 3, d: 3 }, cost: { shells: 150, items: [{ item: 'wood', count: 20 }, { item: 'stone', count: 10 }] },
+    size: { w: 5, d: 4 }, cost: { shells: 150, items: [{ item: 'wood', count: 20 }, { item: 'stone', count: 10 }] },
     buildWork: 1500, coreLevel: 1, starterBlueprint: true, workSlots: 2,
     workTasks: ['windmill', 'baking', 'brewing', 'power', 'smithing', 'perfumery', 'transport'], countsTowardLimit: true,
   },
   {
     id: 'storage', name: '仓库', kind: 'storage', description: '多放 20 格东西。',
-    size: { w: 2, d: 2 }, cost: { shells: 120, items: [{ item: 'plank', count: 8 }, { item: 'brick', count: 4 }] },
+    size: { w: 4, d: 3 }, cost: { shells: 120, items: [{ item: 'plank', count: 8 }, { item: 'brick', count: 4 }] },
     buildWork: 900, coreLevel: 1, starterBlueprint: false, workSlots: 0, workTasks: [], capacity: 20, countsTowardLimit: true,
   },
   {
     id: 'hatchery', name: '繁殖屋', kind: 'hatchery', description: '两只絮灵在这里生下絮灵蛋，蛋也在这里孵化。',
-    size: { w: 3, d: 3 }, cost: { shells: 300, items: [{ item: 'plank', count: 10 }, { item: 'brick', count: 10 }] },
+    size: { w: 4, d: 4 }, cost: { shells: 300, items: [{ item: 'plank', count: 10 }, { item: 'brick', count: 10 }] },
     buildWork: 2400, coreLevel: 2, starterBlueprint: false, workSlots: 0, workTasks: [], countsTowardLimit: true,
   },
   {
     id: 'purifyPool', name: '净化池', kind: 'purifyPool', description: '让蚀化的絮灵在这里静养 3 天，洗去暗色的雾。',
-    size: { w: 2, d: 2 }, cost: { shells: 200, items: [{ item: 'brick', count: 8 }, { item: 'mistCrystal', count: 4 }] },
+    size: { w: 3, d: 3 }, cost: { shells: 200, items: [{ item: 'brick', count: 8 }, { item: 'mistCrystal', count: 4 }] },
     buildWork: 1200, coreLevel: 2, starterBlueprint: false, workSlots: 0, workTasks: [], capacity: 2, countsTowardLimit: true,
   },
   {
     id: 'hotSpring', name: '温泉', kind: 'hotSpring', description: '疲惫的絮灵泡一泡很快就好；也让蛋孵得更快。',
-    size: { w: 3, d: 3 }, cost: { shells: 400, items: [{ item: 'brick', count: 15 }, { item: 'copperIngot', count: 4 }] },
+    size: { w: 4, d: 4 }, cost: { shells: 400, items: [{ item: 'brick', count: 15 }, { item: 'copperIngot', count: 4 }] },
     buildWork: 2400, coreLevel: 3, starterBlueprint: false, workSlots: 0, workTasks: [], capacity: 4, countsTowardLimit: true, maxCount: 1,
   },
   {
