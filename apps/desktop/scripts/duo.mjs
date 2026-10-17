@@ -8,7 +8,8 @@ import { createServer } from 'vite';
 const appDir = fileURLToPath(new URL('..', import.meta.url));
 const port = process.env.CLOUDSEA_PORT ?? '47621';
 
-const server = await createServer({ configFile: fileURLToPath(new URL('../vite.config.mts', import.meta.url)) });
+// 用自己的端口，和同时开着的 pnpm dev（5173）互不影响；被占时 Vite 会自动往后找
+const server = await createServer({ configFile: fileURLToPath(new URL('../vite.config.mts', import.meta.url)), server: { port: 5183, strictPort: false } });
 await server.listen();
 const url = server.resolvedUrls?.local[0];
 if (!url) throw new Error('vite dev server has no local url');

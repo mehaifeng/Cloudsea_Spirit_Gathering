@@ -17,5 +17,6 @@ export default defineConfig({
     // three.js 单包约 600 kB，桌面端本地加载，不必拆包
     chunkSizeWarningLimit: 1500,
   },
-  server: { port: 5173, strictPort: true },
+  // 端口被占时自动换下一个（启动脚本读实际地址，不依赖固定端口）
+  server: { port: 5173, strictPort: false },
 });
