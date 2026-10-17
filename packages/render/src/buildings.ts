@@ -482,3 +482,77 @@ export function makeBuildingView(type: string, w: number, d: number, seed: numbe
     },
   };
 }
+
+/**
+ * 灯塔（DESIGN 3.1 / 5.3，M2）：八角石塔（约 11 米）、木门、小窗、塔顶的灯室（玻璃 + 灯芯）与尖顶。
+ * setLit(true) 灯塔重燃：灯芯发光、灯室亮起一圈光。
+ */
+export interface LighthouseView {
+  readonly group: THREE.Group;
+  readonly glows: THREE.MeshStandardMaterial[];
+  setLit(lit: boolean): void;
+  update(t: number): void;
+}
+
+export function makeLighthouse(): LighthouseView {
+  const group = new THREE.Group();
+  const glows: THREE.MeshStandardMaterial[] = [];
+  const stone = mat(C.stone);
+  const dark = mat(C.stoneDark);
+  // 台基 + 收分塔身（三段，段间有挑檐）
+  mesh(group, new THREE.CylinderGeometry(2.6, 2.9, 0.8, 8), dark, 0, 0.4, 0).rotation.y = Math.PI / 8;
+  const segs: Array<[number, number, number, number]> = [
+    [1.9, 2.2, 3.6, 2.6],
+    [1.6, 1.9, 3.2, 6.0],
+    [1.35, 1.6, 2.6, 8.9],
+  ];
+  for (const [rt, rb, h2, y] of segs) {
+    mesh(group, new THREE.CylinderGeometry(rt, rb, h2, 8), stone, 0, y, 0).rotation.y = Math.PI / 8;
+    mesh(group, new THREE.CylinderGeometry(rt + 0.15, rt + 0.15, 0.18, 8), dark, 0, y + h2 / 2, 0).rotation.y = Math.PI / 8;
+  }
+  // 门与窗
+  box(group, 1.1, 2.2, 0.15, C.door, 0, 1.9, 2.18);
+  box(group, 1.3, 0.15, 0.2, C.stoneDark, 0, 3.05, 2.2);
+  for (const [y, r] of [[5.4, 1.78], [8.4, 1.5]] as const) {
+    for (const a of [0, Math.PI * 0.75, Math.PI * 1.25]) {
+      const w = box(group, 0.4, 0.7, 0.12, 0x3d2c22, Math.sin(a) * r, y, Math.cos(a) * r, { ry: a, shadow: false });
+      w.castShadow = false;
+    }
+  }
+  // 灯室：栏杆平台、玻璃罩、灯芯、尖顶
+  const top = 10.2;
+  mesh(group, new THREE.CylinderGeometry(1.75, 1.45, 0.3, 8), dark, 0, top, 0).rotation.y = Math.PI / 8;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    box(group, 0.08, 0.7, 0.08, C.timberDark, Math.cos(a) * 1.6, top + 0.5, Math.sin(a) * 1.6);
+  }
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.05, 4, 16), mat(C.timberDark));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = top + 0.85;
+  group.add(ring);
+  const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 1.5, 8, 1, true), new THREE.MeshStandardMaterial({ color: 0xcfe6f0, transparent: true, opacity: 0.35, flatShading: true, side: THREE.DoubleSide }));
+  glass.position.y = top + 0.95;
+  group.add(glass);
+  const lampMat = new THREE.MeshStandardMaterial({ color: 0x7a7066, emissive: 0xffc56a, emissiveIntensity: 0, flatShading: true });
+  glows.push(lampMat);
+  const lamp = mesh(group, new THREE.OctahedronGeometry(0.45, 0), lampMat, 0, top + 0.95, 0);
+  lamp.scale.set(1, 1.4, 1);
+  mesh(group, new THREE.ConeGeometry(1.25, 1.3, 8), mat(C.roofRed), 0, top + 2.35, 0).rotation.y = Math.PI / 8;
+  const light = new THREE.PointLight(0xffc56a, 0, 30, 1.6);
+  light.position.y = top + 0.95;
+  group.add(light);
+  let lit = false;
+  return {
+    group,
+    glows,
+    setLit(v) {
+      lit = v;
+      lampMat.emissiveIntensity = v ? 1.4 : 0;
+      lampMat.color.set(v ? 0xfff1c8 : 0x7a7066);
+      light.intensity = v ? 4 : 0;
+    },
+    update(t) {
+      if (lit) lamp.rotation.y = t * 0.8;
+    },
+  };
+}

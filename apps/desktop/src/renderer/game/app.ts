@@ -1,4 +1,6 @@
 import { ECONOMY, getContent } from '@cloudsea/content';
+import type { ClientTransport } from '@cloudsea/net';
+import { createCharacter as newCharacter, loadCharacter } from '@cloudsea/sim';
 import {
   createRng,
   createSpirit,
@@ -20,14 +22,15 @@ import { Cutscene, type Shot } from './cinematic';
 import { ambushShots, arrivalShots, keeperIntroShots, openingShots } from './cutscenes';
 import { SCENARIOS, type ScenarioHost } from './scenarios';
 import { VoyageView } from './voyageView';
-import { arrivalPoint, HOME_DOCK } from '@cloudsea/sim';
+import { arrivalPoint, CLOUDLORD_SPOT, HOME_DOCK } from '@cloudsea/sim';
 import { BuildMode } from './build';
 import { ExploreView, type Interactable } from './explore';
 import { Hud } from './hud';
 import { Input } from './input';
 import { openBuilding, openCore, openDock, openKeeper, openMenu, openSpirit, openStarChart, type Ctx } from './panels';
 import { saveBackend } from './saves';
-import { GameSession, PLAYER_ID } from './session';
+import { characterStore, GameSession, newCharacterId, PLAYER_ID } from './session';
+import { ipcClientTransport, netBridge } from './netTransports';
 import { itemName } from './text';
 import { Tutorial } from './tutorial';
 import { UiRoot } from './uiRoot';
@@ -101,6 +104,8 @@ export class App {
   private mode: Mode = 'title';
   private last = performance.now();
   private pendingBattle: string | null = null;
+  /** 有人加入了战斗，等快照到了重建战斗界面（M2）。 */
+  private pendingRebuild: string | null = null;
   private pendingTurns: Array<{ battleId: string; events: readonly BattleEvent[] }> = [];
   private pendingEnd: Extract<WorldEvent, { t: 'battleEnd' }> | null = null;
   private titleEl: HTMLElement | null = null;
@@ -138,6 +143,25 @@ export class App {
       saveNow: () => this.session?.save() ?? Promise.resolve(),
       quitToTitle: () => this.quitToTitle(),
       sail: (islandId) => this.beginSail(islandId),
+      net: {
+        role: () => this.session?.role ?? 'host',
+        lan: () => this.session?.lan ?? null,
+        openLan: async () => {
+          try {
+            const r = await this.session!.openLan(this.lanPort());
+            this.ui.toast(`已开放局域网联机：端口 ${r.port}`);
+          } catch (e) {
+            this.ui.toast(`开放失败：${(e as Error).message}`, 'error');
+          }
+        },
+        steamStatus: async () => (await netBridge()?.steamStatus()) ?? { available: false, error: '网页版不支持 Steam', name: null, appId: 480 },
+        openSteam: async () => {
+          const r = await this.session!.openSteam();
+          if (!r.ok) this.ui.toast(r.error ?? 'Steam 房间创建失败', 'error');
+        },
+        steamLobby: () => this.session?.steamLobby ?? null,
+        leave: () => void this.leaveAsGuest(),
+      },
     };
     this.hud.onPartyClick = (id) => {
       if (this.mode === 'explore' && !this.ui.capturing) openSpirit(this.ctx, id);
@@ -180,16 +204,116 @@ export class App {
         }),
       ),
     );
-    this.titleEl = h('div', { id: 'title' }, h('h1', {}, '云海拾灵'), h('div', { class: 'sub' }, 'Cloudsea: Spirit Gathering · M1 垂直切片'), panel);
+    panel.append(button('加入联机', () => void this.showJoin(panel, name.value)));
+    this.titleEl = h('div', { id: 'title' }, h('h1', {}, '云海拾灵'), h('div', { class: 'sub' }, 'Cloudsea: Spirit Gathering · M2 联机预览'), panel);
     this.ui.layer.append(this.titleEl);
     focusFirst(panel);
     document.body.dataset['ready'] = 'true';
+    // 双窗口联机调试（scripts/duo.mjs）：房主自动开新游戏并开放局域网；客人预填加入地址
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('autohost') === '1' && !this.sceneStarted) {
+      this.sceneStarted = true;
+      this.startSession(GameSession.create('房主', this.testMode ? 20261017 : undefined));
+      await this.ctx.net.openLan();
+      return;
+    }
+    if (qs.get('join') && !this.sceneStarted) {
+      this.sceneStarted = true;
+      void this.showJoin(panel, '客人', qs.get('join')!);
+    }
     // 测试模式的场景直达：?test=1&scene=swim
     const scene = this.testMode ? new URLSearchParams(location.search).get('scene') : null;
     if (scene && !this.sceneStarted) {
       this.sceneStarted = true;
       void this.runScene(scene);
     }
+  }
+
+  private lanPort(): number | undefined {
+    const p = Number(new URLSearchParams(location.search).get('port'));
+    return Number.isFinite(p) && p > 0 ? p : undefined;
+  }
+
+  /** 标题画面的“加入联机”（M2）：选角色（本机已有的或新建）、填房主地址。 */
+  private async showJoin(panel: HTMLElement, defaultName: string, address = '127.0.0.1:47621'): Promise<void> {
+    const net = netBridge();
+    if (!net) {
+      this.ui.toast('网页版不能联机', 'error');
+      return;
+    }
+    const chars = await characterStore().list();
+    let pick: string | null = chars[0]?.id ?? null;
+    const name = h('input', { type: 'text', value: defaultName, maxlength: '16', style: 'width:140px' }) as HTMLInputElement;
+    const addr = h('input', { type: 'text', value: address, style: 'width:220px', id: 'join-address' }) as HTMLInputElement;
+    const list = h('div', { class: 'col', style: 'align-items:stretch;gap:4px' });
+    const renderList = () => {
+      list.replaceChildren(
+        ...chars.map((c) => {
+          let label = c.id;
+          try {
+            const ch = loadCharacter(JSON.parse(c.data));
+            label = `${ch.name}（絮灵 ${Object.keys(ch.spirits).length} 只）`;
+          } catch {
+            /* 坏档只显示 id */
+          }
+          return button(label, () => ((pick = c.id), renderList()), { class: pick === c.id ? 'selected' : '' });
+        }),
+        button(h('span', {}, '新角色：', name), () => ((pick = null), renderList()), { class: pick === null ? 'selected' : '' }),
+      );
+    };
+    renderList();
+    const status = h('div', { class: 'muted', id: 'join-status' }, '房主在菜单 → 联机 里开放局域网后，把地址告诉你。');
+    const go = async () => {
+      status.textContent = '连接中……';
+      const url = addr.value.includes('://') ? addr.value : `ws://${addr.value.includes(':') ? addr.value : `${addr.value}:47621`}`;
+      const r = await net.joinLan(url);
+      if (!r.ok) {
+        status.textContent = r.error ?? '连不上';
+        return;
+      }
+      await this.joinWith(ipcClientTransport(net), pick ? chars.find((c) => c.id === pick)!.data : null, name.value, (msg) => (status.textContent = msg));
+    };
+    panel.replaceChildren(
+      h('b', {}, '加入联机'),
+      h('div', { class: 'muted' }, '用哪个角色：'),
+      list,
+      h('div', { class: 'row' }, h('span', {}, '房主地址'), addr),
+      h('div', { class: 'row' }, button('加入', () => void go(), { class: 'primary' }), button('返回', () => this.backToTitle())),
+      h('div', { class: 'muted' }, 'Steam：在 Steam 好友列表里接受邀请，会自动加入。'),
+      status,
+    );
+    focusFirst(panel);
+  }
+
+  private backToTitle(): void {
+    this.titleEl?.remove();
+    this.titleEl = null;
+    this.title?.dispose();
+    this.title = null;
+    void this.showTitle();
+  }
+
+  /** 带着角色连上房主（局域网或 Steam 的连接都已建立）。 */
+  private async joinWith(transport: ClientTransport, charData: string | null, name: string, report: (msg: string) => void): Promise<void> {
+    // 新角色随机一套衣服与围巾的颜色，联机时一眼分得清谁是谁
+    const palette = [['#4A7FB0', '#F2E2B6'], ['#5C9A6E', '#E07A5F'], ['#8A6BB0', '#F0B143'], ['#C9A35A', '#3F8A86'], ['#B5533C', '#9FD0E8']] as const;
+    const [cloth, scarf] = palette[Math.floor(Math.random() * palette.length)]!;
+    const character = charData
+      ? loadCharacter(JSON.parse(charData))
+      : newCharacter(this.content, { id: newCharacterId(), name: name.trim().slice(0, 16) || '旅人', appearance: { skinTone: '#F2C9A0', hairColor: '#4A3426', clothColor: cloth, scarfColor: scarf } });
+    try {
+      const session = await GameSession.join(transport, character);
+      this.startSession(session);
+    } catch (e) {
+      report(`加入失败：${(e as Error).message}`);
+      transport.close();
+    }
+  }
+
+  /** 客人离开：先存自己的角色，再回标题。 */
+  private async leaveAsGuest(): Promise<void> {
+    await this.session?.save();
+    this.quitToTitle();
   }
 
   private startSession(session: GameSession): void {
@@ -201,6 +325,11 @@ export class App {
     this.tutorial = new Tutorial(this.ui, (step, done) => void this.act({ type: 'tutorial', step, ...(done ? { done } : {}) }));
     session.client.onSnapshot((w) => this.onSnapshot(w));
     session.client.onEvents((es) => this.onEvents(es));
+    session.client.onClose((reason) => {
+      if (this.session !== session || reason === '已离开') return;
+      this.ui.toast(`联机结束：${reason}`, 'error');
+      void session.save().finally(() => this.session === session && this.quitToTitle());
+    });
     this.world = session.client.world;
     this.enterExplore();
     void session.save();
@@ -320,6 +449,11 @@ export class App {
       else if (this.explore) this.transitionToBattle(id, this.battleFocus(b));
       else this.startBattleView(world, id);
     }
+    if (this.battle) this.battle.setWorld(world);
+    if (this.battle && this.pendingRebuild && world.battles[this.pendingRebuild]) {
+      this.battle.rebuild(world.battles[this.pendingRebuild]!);
+      this.pendingRebuild = null;
+    }
     if (this.battle && (this.pendingTurns.length || this.pendingEnd)) {
       const turns = this.pendingTurns.splice(0);
       const end = this.pendingEnd;
@@ -414,6 +548,7 @@ export class App {
     return () => {
       if (!ex) return null;
       if (b.wildId) return ex.creatureView(b.wildId)?.headPos() ?? null;
+      if (b.cloudlordId) return new THREE.Vector3(CLOUDLORD_SPOT.x, ex.ground(CLOUDLORD_SPOT.x, CLOUDLORD_SPOT.z) + 1.8, CLOUDLORD_SPOT.z);
       if (b.keeperId) {
         const k = ex.keeperView(b.keeperId);
         return k ? new THREE.Vector3(k.x, k.feetY + 1.4, k.z) : null;
@@ -542,6 +677,11 @@ export class App {
   private onEvents(events: readonly WorldEvent[]): void {
     const c = this.world?.characters[PLAYER_ID];
     for (const e of events) {
+      // 别人加入 / 离开世界（M2）：事件里的 playerId 是那个人
+      if (e.t === 'playerJoined' || e.t === 'playerLeft') {
+        if (e.playerId !== PLAYER_ID) this.ui.toast(`${e.name} ${e.t === 'playerJoined' ? '加入了世界' : '离开了世界'}`);
+        continue;
+      }
       if ('playerId' in e && e.playerId && e.playerId !== PLAYER_ID) continue;
       switch (e.t) {
         case 'toast':
@@ -588,6 +728,14 @@ export class App {
           this.ui.toast('一只絮灵净化完成了');
           break;
         case 'evolved':
+          break;
+        case 'battleJoined':
+          // 有人加入了这场战斗：战斗按新人数重建，界面等下一份快照刷新
+          this.pendingRebuild = e.battleId;
+          if (e.joiner !== PLAYER_ID) this.ui.toast(`${this.world?.characters[e.joiner]?.name ?? '队友'} 加入了战斗`);
+          break;
+        case 'lighthouseLit':
+          this.ui.say('灯塔', ['塔顶的灯一点一点亮了起来。', '笼罩着晴原的蚀雾退去了。被净化的曦冕安静地趴在塔下。'], '灯塔重燃');
           break;
         case 'recovered': {
           const s = this.world?.characters[PLAYER_ID]?.spirits[e.spiritId];
@@ -651,6 +799,12 @@ export class App {
         if (await this.act({ type: 'setParty', spiritIds: [...c.party, it.id] }, `${name} 跟上了你`)) this.explore?.celebrate(it.id);
         break;
       }
+      case 'joinBattle':
+        await this.act({ type: 'joinBattle', battleId: it.id });
+        break;
+      case 'cloudlord':
+        await this.act({ type: 'challengeCloudlord', cloudlordId: it.id });
+        break;
       case 'starter':
         if (await this.act({ type: 'adoptStarter' })) {
           await this.act({ type: 'tutorial', step: 2 });
@@ -790,6 +944,7 @@ export class App {
         if (input.hit('Escape')) openMenu(this.ctx, 'settings');
       }
       if (this.mode === 'explore') this.hud.update(this.world, this.explore.nearest, 'explore', this.ui.capturing);
+      this.hud.nameplates(this.mode === 'explore' ? this.explore.nameplates().map((n) => ({ ...n, screen: this.explore!.project(n.pos, innerWidth, innerHeight) })) : []);
       this.tutorial?.update(this.world, this.explore);
     } else if ((this.mode === 'boarding' || this.mode === 'landing') && this.explore) {
       this.explore.update(dt, null, (x, z, yaw) => this.session?.client.fire({ type: 'move', x, z, yaw }), false);

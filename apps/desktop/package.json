@@ -6,9 +6,10 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "duo": "node scripts/duo.mjs",
     "build": "vite build && tsc -p tsconfig.main.json",
     "start": "electron .",
-    "smoke": "pnpm build && playwright test tests/smoke.spec.ts tests/playthrough.spec.ts",
+    "smoke": "pnpm build && playwright test tests/smoke.spec.ts tests/playthrough.spec.ts tests/coop.spec.ts",
     "scenes": "pnpm build && playwright test tests/scenes.spec.ts",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.node.json"
   },

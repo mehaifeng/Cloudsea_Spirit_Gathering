@@ -147,6 +147,8 @@ export class BattleView {
     const p = this.slotPos(side, slot);
     v.setPosition(p.x, p.z, side === 0 ? Math.PI : 0);
     v.setFainted(u.downed);
+    // 云主（每回合多行动的单位）在战斗里也显得更大
+    if (u.extraActions > 0) v.group.scale.setScalar(1.6);
     this.scene.add(v.group);
     this.views.set(u.uid, v);
     const tag = h('div', { class: 'unit-tag' });
@@ -174,9 +176,51 @@ export class BattleView {
 
   // ---------------------------------------------------------------- 选择阶段
 
+  /** 只需要为自己的絮灵选（多人战斗里别人的位置由他们自己选，M2）。 */
   private needsChoice(slot: number): boolean {
     const u = unitAt(this.state, { side: 0, slot });
-    return isAlive(u) && !u.charging;
+    return isAlive(u) && !u.charging && u.ownerId === PLAYER_ID;
+  }
+
+  private get multi(): boolean {
+    return this.battle.participants.length > 1;
+  }
+
+  /** 房主快照到了：更新世界（倒计时、队友是否选好）。 */
+  setWorld(world: Readonly<WorldState>): void {
+    this.world = world;
+    const b = world.battles[this.battle.id];
+    if (b && b.state.turn === this.state.turn) this.battle = { ...this.battle, participants: b.participants, submitted: b.submitted, deadlineTick: b.deadlineTick };
+    if (this.waiting) this.renderWaiting();
+  }
+
+  /** 有人加入（M2）：战斗按新人数重建，场景与行动栏重来。 */
+  rebuild(b: ActiveBattle): void {
+    this.battle = b;
+    this.state = b.state;
+    for (const uid of [...this.views.keys()]) this.removeView(uid);
+    this.placeAll();
+    this.busy = false;
+    this.waiting = false;
+    this.startChoosing();
+  }
+
+  private waiting = false;
+
+  /** 自己选好了、等队友：显示谁还没选、还剩几秒。 */
+  private renderWaiting(): void {
+    clear(this.panel);
+    const b = this.battle;
+    const left = b.deadlineTick !== null ? Math.max(0, Math.ceil((b.deadlineTick - this.world.tick) / 10)) : null;
+    const pending = b.participants.filter((pid) => pid !== PLAYER_ID && !b.submitted[pid] && this.world.characters[pid]).map((pid) => this.world.characters[pid]!.name);
+    this.panel.append(
+      h(
+        'div',
+        { class: 'panel battle-actions' },
+        h('b', {}, '等待队友选择'),
+        h('div', { class: 'muted' }, pending.length ? `还在选：${pending.join('、')}` : '马上结算……', left !== null ? `  · 还剩 ${left} 秒（超时的按防御）` : ''),
+      ),
+    );
   }
 
   private startChoosing(): void {
@@ -227,6 +271,12 @@ export class BattleView {
       this.ui.toast(r.error ?? '行动无效', 'error');
       this.busy = false;
       this.startChoosing();
+      return;
+    }
+    // 多人：结算前一直等队友
+    if (this.multi && this.busy) {
+      this.waiting = true;
+      this.renderWaiting();
     }
   }
 
@@ -278,10 +328,12 @@ export class BattleView {
         row.append(b);
       };
       if (bench.length > 0) tipped('换人', () => ((this.sub = 'switch'), this.renderPanel()), '换人', '换下这只絮灵，换上后备的伙伴。换人在本回合最先执行，换上来的伙伴这回合不行动。');
-      if (this.state.kind === 'wild') {
+      if (this.state.kind === 'wild' && !this.multi) {
         tipped('灯露', () => ((this.sub = 'dew'), this.renderPanel()), '灯露', '用灯露邀请野生絮灵加入。对方体力越低、灯露品质越好，成功率越高。');
         tipped('逃跑', () => this.choose({ type: 'flee' }), '逃跑', '离开这场战斗。按双方的灵巧判定能否逃掉，失败会白白浪费这一回合。');
-      } else if (this.state.kind !== 'scripted') {
+      } else if (this.state.kind === 'wild') {
+        tipped('灯露', () => ((this.sub = 'dew'), this.renderPanel()), '灯露', '用灯露邀请野生絮灵加入。捕获到的絮灵归扔灯露的人。');
+      } else if (this.state.kind !== 'scripted' && !this.multi) {
         tipped('认输', () => ((this.sub = 'forfeit'), this.renderPanel()), '认输', '结束这场对战，按战败处理（没有额外惩罚，絮灵保持现在的伤势）。');
       }
       // 被看破的对手：显示它下回合要做什么
@@ -401,6 +453,7 @@ export class BattleView {
   async playTurn(events: readonly BattleEvent[], next: ActiveBattle | null, world: Readonly<WorldState>): Promise<void> {
     this.world = world;
     this.busy = true;
+    this.waiting = false;
     clear(this.panel);
     for (const e of events) {
       await this.playEvent(e);
@@ -560,6 +613,16 @@ export class BattleView {
         this.say(e.success ? '成功逃跑了。' : '没能逃掉！');
         await sleep(500);
         return;
+      case 'phase': {
+        this.say(e.line);
+        const v = this.views.get(e.uid);
+        if (v) {
+          v.hop(4);
+          this.fx.spawn('puff', v.headPos(), 16, { size: 1, vy: 1, life: 1.2, spread: 3, color: 0x3a2f4a });
+        }
+        await sleep(900);
+        return;
+      }
       case 'end':
         return;
     }
@@ -632,6 +695,7 @@ export class BattleView {
       tag.className = `unit-tag ${mine && this.state.sides[0].active[this.choosingSlot] === findUnit(this.state, uid).index && !this.busy ? 'active' : ''}`;
       tag.append(
         h('div', { class: 'row', style: 'gap:4px' }, ...unit.elements.map((e) => elementIcon(e, 14)), h('b', {}, unit.name), h('span', { class: 'muted' }, `Lv.${unit.level}`)),
+        mine && unit.ownerId !== PLAYER_ID ? h('div', { class: 'muted', style: 'font-size:12px' }, `${this.world.characters[unit.ownerId]?.name ?? '队友'}的`) : '',
         h('div', { class: `hpbar ${ratio < 0.3 ? 'low' : ''}` }, h('i', { style: `width:${Math.max(0, ratio * 100)}%` })),
         h('div', { class: 'muted', style: 'font-size:14px' }, `${unit.hp}/${unit.maxHp}`, unit.ailment ? `  ${AILMENT_INFO[unit.ailment.id].name}` : '', unit.charging ? '  蓄力中' : '', ...stages.map(([k, n]) => `  ${STAT_LABEL[k]}${n > 0 ? '+' : ''}${n}`)),
       );

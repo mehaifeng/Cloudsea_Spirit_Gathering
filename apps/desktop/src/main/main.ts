@@ -51,6 +51,7 @@ function createWindow(): void {
   const autoJoin = process.env['CLOUDSEA_AUTOJOIN'];
   if (autoJoin) query.set('join', autoJoin);
   if (process.env['CLOUDSEA_AUTOHOST'] === '1') query.set('autohost', '1');
+  if (process.env['CLOUDSEA_PORT']) query.set('port', process.env['CLOUDSEA_PORT']);
   if (profile) query.set('profile', profile);
   const search = query.toString();
   if (devServerUrl) {

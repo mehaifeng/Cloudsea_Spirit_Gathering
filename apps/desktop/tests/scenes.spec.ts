@@ -131,6 +131,18 @@ const SCENES: Record<string, (win: Page) => Promise<void>> = {
     for (let i = 0; i < 80 && (await g<string>(win, 'g.mode()')) !== 'voyage'; i++) await win.waitForTimeout(100);
     expect(await g(win, 'g.mode()')).toBe('voyage');
   },
+  lighthouse: async (win) => {
+    await win.waitForTimeout(800);
+    await shot(win, 'lighthouse');
+    expect(await g(win, `g.interactables().some((i) => i.kind === 'cloudlord')`)).toBe(true);
+  },
+  cloudlord: async (win) => {
+    await win.waitForTimeout(1800);
+    await shot(win, 'cloudlord-battle');
+    // 单人上限 3 个位置（只带了 1 只就上 1 只）；云主一方 = 云主 + 2 护卫
+    expect(await g<string>(win, 'Object.values(g.world().battles)[0].kind')).toBe('cloudlord');
+    expect(await g<number>(win, 'Object.values(g.world().battles)[0].state.sides[1].units.length')).toBe(3);
+  },
   ambush: async (win) => {
     for (let i = 0; i < 40 && (await g<string>(win, 'g.mode()')) !== 'cutscene'; i++) await win.waitForTimeout(100);
     await win.waitForTimeout(700);

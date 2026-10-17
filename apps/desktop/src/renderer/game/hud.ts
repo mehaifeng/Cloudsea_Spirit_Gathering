@@ -9,6 +9,34 @@ import type { UiRoot } from './uiRoot';
 export class Hud {
   private lastKey = '';
   private lastPrompt = '';
+  private readonly plates = h('div', { id: 'nameplates' });
+  private readonly plateEls = new Map<string, HTMLElement>();
+
+  /** 同岛其他玩家头顶的名字（M2）；在战斗中的带个“⚔ 战斗中”。 */
+  nameplates(list: Array<{ id: string; name: string; battle: boolean; screen: { x: number; y: number; visible: boolean } }>): void {
+    if (!this.plates.isConnected) this.ui.layer.append(this.plates);
+    const seen = new Set<string>();
+    for (const n of list) {
+      seen.add(n.id);
+      let el = this.plateEls.get(n.id);
+      if (!el) {
+        el = h('div', { class: 'nameplate' });
+        this.plates.append(el);
+        this.plateEls.set(n.id, el);
+      }
+      const text = n.battle ? `${n.name} · 战斗中` : n.name;
+      if (el.textContent !== text) el.textContent = text;
+      el.classList.toggle('battle', n.battle);
+      el.style.display = n.screen.visible ? '' : 'none';
+      el.style.transform = `translate(${Math.round(n.screen.x)}px, ${Math.round(n.screen.y)}px) translate(-50%, -100%)`;
+    }
+    for (const [id, el] of this.plateEls) {
+      if (seen.has(id)) continue;
+      el.remove();
+      this.plateEls.delete(id);
+    }
+  }
+
   /** 点队伍徽章（打开该絮灵的详情）。 */
   onPartyClick: ((spiritId: string) => void) | null = null;
 
@@ -82,6 +110,7 @@ export class Hud {
     this.lastKey = '';
     this.lastPrompt = '';
     for (const el of [this.ui.hudTL, this.ui.hudTR, this.ui.partyBar, this.ui.prompt]) clear(el);
+    this.nameplates([]);
     this.ui.hints.classList.add('hidden');
   }
 }

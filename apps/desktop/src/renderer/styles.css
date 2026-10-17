@@ -225,3 +225,8 @@ body:has(#dialogue:not(.hidden)) #hints { display: none; }
 .skill-tip b { font-family: var(--f-title); font-weight: 400; font-size: 18px; }
 .warn-text { color: var(--bad); font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .battle-wipe, .battle-wipe.out { animation-duration: 0.01s; } }
+
+/* 其他玩家头顶的名字（M2） */
+#nameplates { position: fixed; inset: 0; pointer-events: none; }
+.nameplate { position: absolute; left: 0; top: 0; font-size: 14px; font-weight: 700; color: var(--ink); background: var(--paper); border: 1.5px solid var(--ink); border-radius: var(--wobble-sm); padding: 1px 8px; white-space: nowrap; box-shadow: 2px 2px 0 rgba(59, 49, 73, 0.25); }
+.nameplate.battle { border-color: var(--stamp); color: var(--stamp); }

@@ -1,6 +1,8 @@
 import { GATHER_YIELD, HOME_CHART_POS, type ContentDb, type Island } from '@cloudsea/content';
 import {
   arrivalPoint,
+  CLOUDLORD_SPOT,
+  cloudlordSpirits,
   clockAt,
   worldPosition,
   foundationHeight,
@@ -33,6 +35,8 @@ import {
   makeBuildingView,
   makeGatherProp,
   makeGangway,
+  makeLighthouse,
+  type LighthouseView,
   makeSkiff,
   setWaterTint,
   SKIFF_DECK_Y,
@@ -50,7 +54,7 @@ import * as THREE from 'three';
 import type { Input } from './input';
 import { PLAYER_ID } from './session';
 
-export type InteractKind = 'gather' | 'wild' | 'keeper' | 'building' | 'dock' | 'pier' | 'core' | 'starter' | 'pet' | 'recruit';
+export type InteractKind = 'gather' | 'wild' | 'keeper' | 'building' | 'dock' | 'pier' | 'core' | 'starter' | 'pet' | 'recruit' | 'joinBattle' | 'cloudlord';
 
 export interface Interactable {
   readonly kind: InteractKind;
@@ -133,6 +137,10 @@ export class ExploreView {
   /** 舷梯（v0.7）：放在哪一舷、水平长度、落差、伸出比例（动画中）与目标。 */
   private gangway: { view: GangwayView; side: 1 | -1; run: number; drop: number; top: number; extend: number; target: number } | null = null;
   private readonly keepers = new Map<string, HumanoidView>();
+  /** 同一座岛上的其他玩家（M2）：人物、头顶名字、跟随的絮灵；位置按房主快照插值。 */
+  private readonly others = new Map<string, { view: HumanoidView; target: { x: number; z: number; yaw: number }; name: string; battle: boolean; followers: CreatureView[]; key: string }>();
+  /** 灯塔岛（M2）：灯塔、云主与护卫（灯塔重燃后云主被净化，趴在塔下）。 */
+  private lighthouse: { view: LighthouseView; lit: boolean | null; actors: CreatureView[] } | null = null;
   private obstacles: Obstacle[] = [];
   private rects: RectObstacle[] = [];
   /** 码头 / 栈桥（静态）与云舟甲板（随云舟摆放）。 */
@@ -321,6 +329,14 @@ export class ExploreView {
           this.props.set(node.id, { node, view });
         }
         this.buildPier(a);
+        if (this.island!.kind === 'lighthouse') {
+          const lh = makeLighthouse();
+          lh.group.position.set(0, this.terrain.height(0, -12), -12);
+          for (const g of lh.glows) this.env.glowMaterials.add(g);
+          this.root.add(lh.group);
+          this.lighthouse = { view: lh, lit: null, actors: [] };
+          this.obstacles.push({ x: 0, z: -12, r: 2.6 });
+        }
         if (this.island!.keeper) this.buildKeeperHome(this.island!.keeper);
       }
     }
@@ -585,6 +601,9 @@ export class ExploreView {
         }
       }
     }
+    this.syncOthers(world);
+    this.syncLighthouse(world);
+
     // 守岛人
     const keeperHere = this.island?.keeper ?? null;
     const visitors = Object.values(world.keepers).filter((k) => k.visiting?.playerId === PLAYER_ID && this.isHome).map((k) => k.id);
@@ -652,6 +671,19 @@ export class ExploreView {
       list.push({ kind: 'pier', id: 'pier', x: a.x, z: a.z + 1.9, label: '栈桥 · 出航', radius: 2.2 });
     }
     for (const [kid, v] of this.keepers) list.push({ kind: 'keeper', id: kid, x: v.x, z: v.z, label: `和${this.content.keepers.get(kid)!.name}说话`, radius: 2.4 });
+    // 加入同岛玩家正在打的战斗（第一回合结算前，M2）
+    for (const [pid, o] of this.others) {
+      const b = Object.values(world.battles).find((x) => x.participants.includes(pid));
+      if (!b || b.participants.includes(PLAYER_ID) || b.state.turn !== 1 || (b.kind !== 'wild' && b.kind !== 'cloudlord') || b.participants.length >= (b.kind === 'wild' ? 3 : 4)) continue;
+      list.push({ kind: 'joinBattle', id: b.id, x: o.view.x, z: o.view.z, label: `加入 ${o.name} 的${b.kind === 'cloudlord' ? '讨伐' : '战斗'}（${b.participants.length}/${b.kind === 'wild' ? 3 : 4}）`, radius: 3.2 });
+    }
+    // 云主（灯塔岛，M2）
+    const clId = this.island?.cloudlord;
+    if (clId && !world.lighthousesLit.includes(clId)) {
+      const b = Object.values(world.battles).find((x) => x.cloudlordId === clId);
+      if (!b) list.push({ kind: 'cloudlord', id: clId, x: CLOUDLORD_SPOT.x, z: CLOUDLORD_SPOT.z, label: `讨伐 ${this.content.cloudlords.get(clId)!.name}（同岛的人可以一起加入）`, radius: 4.5 });
+      else if (!b.participants.includes(PLAYER_ID) && b.state.turn === 1 && b.participants.length < 4) list.push({ kind: 'joinBattle', id: b.id, x: CLOUDLORD_SPOT.x, z: CLOUDLORD_SPOT.z, label: `加入讨伐（${b.participants.length}/4）`, radius: 4.5 });
+    }
     for (const [id, e] of this.creatures) {
       if (e.kind !== 'own') continue;
       const s = c.spirits[id];
@@ -964,6 +996,113 @@ export class ExploreView {
     await this.raiseGangway();
   }
 
+  // ---------------------------------------------------------------- 其他玩家（M2）
+
+  private syncOthers(world: Readonly<WorldState>): void {
+    const here = new Set<string>();
+    for (const c of Object.values(world.characters)) {
+      if (c.id === PLAYER_ID) continue;
+      const p = world.players[c.id];
+      if (!p || p.islandId !== this.islandId || p.voyage) continue;
+      here.add(c.id);
+      const partyKey = c.party.slice(0, 2).join(',');
+      let o = this.others.get(c.id);
+      if (!o || o.key !== partyKey) {
+        if (o) this.removeOther(c.id);
+        const view = new HumanoidView({ ...c.appearance, lantern: true }, this.glowTex);
+        view.setPosition(p.x, p.z, p.yaw);
+        this.root.add(view.group);
+        const followers = c.party.slice(0, 2).map((id, i) => {
+          const s = c.spirits[id]!;
+          const v = new CreatureView(lookFromSpirit(this.content, s));
+          v.setPosition(p.x - 1 - i, p.z - 1, p.yaw);
+          this.root.add(v.group);
+          return v;
+        });
+        o = { view, target: { x: p.x, z: p.z, yaw: p.yaw }, name: c.name, battle: false, followers, key: partyKey };
+        this.others.set(c.id, o);
+      }
+      o.target = { x: p.x, z: p.z, yaw: p.yaw };
+      o.name = c.name;
+      o.battle = !!p.battleId;
+      o.view.group.visible = true;
+    }
+    for (const id of [...this.others.keys()]) if (!here.has(id)) this.removeOther(id);
+  }
+
+  private removeOther(id: string): void {
+    const o = this.others.get(id);
+    if (!o) return;
+    this.root.remove(o.view.group);
+    o.view.dispose();
+    for (const f of o.followers) {
+      this.root.remove(f.group);
+      f.dispose();
+    }
+    this.others.delete(id);
+  }
+
+  /** 位置插值（房主约每 0.25 秒发一次位置）；按移动的快慢摆走路 / 跑步的姿势。 */
+  private updateOthers(dt: number, t: number): void {
+    for (const o of this.others.values()) {
+      const v = o.view;
+      const dx = o.target.x - v.x;
+      const dz = o.target.z - v.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 12) v.setPosition(o.target.x, o.target.z, o.target.yaw);
+      const k = Math.min(1, dt * 6);
+      v.x += dx * k;
+      v.z += dz * k;
+      const speed = d > 0.05 ? Math.min(4.6, (d * k) / Math.max(dt, 1e-3)) : 0;
+      v.speed = lerp(v.speed, speed, Math.min(1, dt * 8));
+      if (d > 0.1) v.yaw += angDiff(v.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 8);
+      else v.yaw += angDiff(v.yaw, o.target.yaw) * Math.min(1, dt * 4);
+      const depth = this.terrain.isWater(v.x, v.z) ? Math.max(0, WATER_LEVEL - this.terrain.height(v.x, v.z)) : 0;
+      v.water = { y: WATER_LEVEL, depth };
+      v.update(dt, t, (x, z) => this.groundAt(x, z, v.feetY));
+      o.followers.forEach((f, i) => {
+        const bx = v.x - Math.sin(v.yaw) * (1.3 + i * 0.6) + Math.cos(v.yaw) * (i ? 0.8 : -0.8);
+        const bz = v.z - Math.cos(v.yaw) * (1.3 + i * 0.6) - Math.sin(v.yaw) * (i ? 0.8 : -0.8);
+        if (Math.hypot(bx - f.x, bz - f.z) > 0.8) f.moveTo(bx, bz);
+        if (Math.hypot(v.x - f.x, v.z - f.z) > 12) f.setPosition(bx, bz, v.yaw);
+        f.lookAt = { x: v.x, z: v.z };
+        f.update(dt, t, this.creatureGround(false));
+      });
+    }
+  }
+
+  /** 头顶名字（M2）：同岛其他玩家的位置与是否在战斗。 */
+  nameplates(): Array<{ id: string; name: string; pos: THREE.Vector3; battle: boolean }> {
+    return [...this.others.entries()].map(([id, o]) => ({ id, name: o.name, pos: new THREE.Vector3(o.view.x, o.view.feetY + 2.15, o.view.z).add(this.root.position), battle: o.battle }));
+  }
+
+  /** 灯塔岛：没重燃时云主（蚀化、放大）与护卫守在塔下；重燃后云主净化，趴在塔边。 */
+  private syncLighthouse(world: Readonly<WorldState>): void {
+    const lh = this.lighthouse;
+    const clId = this.island?.cloudlord;
+    if (!lh || !clId) return;
+    const lit = world.lighthousesLit.includes(clId);
+    if (lh.lit === lit) return;
+    lh.lit = lit;
+    lh.view.setLit(lit);
+    for (const a of lh.actors) {
+      this.root.remove(a.group);
+      a.dispose();
+    }
+    lh.actors = [];
+    const cl = this.content.cloudlords.get(clId)!;
+    const spirits = cloudlordSpirits(this.content, world as WorldState, cl);
+    spirits.forEach((s, i) => {
+      if (lit && i > 0) return;
+      const v = new CreatureView(lookFromSpirit(this.content, { ...s, blighted: !lit }));
+      const at = i === 0 ? (lit ? { x: 2.4, z: -9.5 } : CLOUDLORD_SPOT) : { x: CLOUDLORD_SPOT.x + (i === 1 ? -2.6 : 2.6), z: CLOUDLORD_SPOT.z + 1 };
+      v.setPosition(at.x, at.z, 0);
+      if (i === 0) v.group.scale.setScalar(1.7);
+      this.root.add(v.group);
+      lh.actors.push(v);
+    });
+  }
+
   // ---------------------------------------------------------------- 表演用的临时絮灵
 
   addActor(id: string, view: CreatureView, x: number, z: number, yaw: number): void {
@@ -1208,6 +1347,11 @@ export class ExploreView {
       }
       if (density <= 0) this.mists.delete(id);
     }
+    this.updateOthers(dt, t);
+    if (this.lighthouse) {
+      this.lighthouse.view.update(t);
+      for (const a of this.lighthouse.actors) a.update(dt, t, this.ground);
+    }
     for (const k of this.keepers.values()) {
       k.lookAt = Math.hypot(P.x - k.x, P.z - k.z) < 6 ? { x: P.x, z: P.z } : null;
       if (k.lookAt) k.yaw += angDiff(k.yaw, Math.atan2(P.x - k.x, P.z - k.z)) * Math.min(1, dt * 2);
@@ -1444,6 +1588,11 @@ export class ExploreView {
     for (const e of this.creatures.values()) e.view.dispose();
     for (const v of this.actors.values()) v.dispose();
     for (const k of this.keepers.values()) k.dispose();
+    for (const o of this.others.values()) {
+      o.view.dispose();
+      for (const f of o.followers) f.dispose();
+    }
+    for (const a of this.lighthouse?.actors ?? []) a.dispose();
     this.player.dispose();
     this.fx.clear();
   }

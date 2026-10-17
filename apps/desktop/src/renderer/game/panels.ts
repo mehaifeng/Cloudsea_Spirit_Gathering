@@ -60,6 +60,19 @@ export interface Ctx {
   quitToTitle(): void;
   /** 出航（v0.6：预检 → 上船表演 → 发意图）。 */
   sail(islandId: string): Promise<boolean>;
+  /** 联机（M2）。 */
+  readonly net: NetCtx;
+}
+
+/** 菜单里“联机”页需要的操作（M2）。 */
+export interface NetCtx {
+  role(): 'host' | 'guest';
+  lan(): { port: number; addresses: string[] } | null;
+  openLan(): Promise<void>;
+  steamStatus(): Promise<{ available: boolean; error: string | null; name: string | null; appId: number }>;
+  openSteam(): Promise<void>;
+  steamLobby(): string | null;
+  leave(): void;
 }
 
 const me = (ctx: Ctx) => ctx.world().characters[PLAYER_ID]!;
@@ -82,12 +95,13 @@ async function doAndRefresh(ctx: Ctx, intent: Intent, ok?: string): Promise<bool
 
 // =================================================================== 主菜单
 
-type Tab = 'spirits' | 'bag' | 'codex' | 'orders' | 'settings';
+type Tab = 'spirits' | 'bag' | 'codex' | 'orders' | 'net' | 'settings';
 const TABS: Array<[Tab, string]> = [
   ['spirits', '絮灵'],
   ['bag', '背包'],
   ['codex', '图鉴'],
   ['orders', '订单'],
+  ['net', '联机'],
   ['settings', '设置'],
 ];
 
@@ -95,10 +109,65 @@ export function openMenu(ctx: Ctx, tab: Tab = 'spirits'): void {
   let current = tab;
   const render = (): HTMLElement => {
     const tabs = h('div', { class: 'tabs' }, ...TABS.map(([id, label]) => button(label, () => ((current = id), ctx.ui.refresh(true)), { class: id === current ? 'selected' : '' })));
-    const body = current === 'spirits' ? spiritsTab(ctx) : current === 'bag' ? bagTab(ctx) : current === 'codex' ? codexTab(ctx) : current === 'orders' ? ordersTab(ctx) : settingsTab(ctx);
+    const body = current === 'spirits' ? spiritsTab(ctx) : current === 'bag' ? bagTab(ctx) : current === 'codex' ? codexTab(ctx) : current === 'orders' ? ordersTab(ctx) : current === 'net' ? netTab(ctx) : settingsTab(ctx);
     return frame('菜单', ctx, tabs, body);
   };
   ctx.ui.openModal(render);
+}
+
+// ---------------------------------------------------------------- 联机（M2）
+
+let steamInfo: Awaited<ReturnType<NetCtx['steamStatus']>> | null = null;
+
+function netTab(ctx: Ctx): HTMLElement {
+  const w = ctx.world();
+  const players = Object.values(w.characters).map((c) => {
+    const p = w.players[c.id]!;
+    const isl = p.islandId.startsWith('home:') ? `${w.characters[p.islandId.slice(5)]?.name ?? ''}的家园岛` : (ctx.content.islands.get(p.islandId)?.name ?? '');
+    return h(
+      'div',
+      { class: 'row', style: 'justify-content:space-between' },
+      h('span', {}, h('b', {}, c.name), c.id === w.hostId ? h('span', { class: 'badge', style: 'margin-left:6px' }, '房主') : null, c.id === PLAYER_ID ? h('span', { class: 'muted' }, '（你）') : null),
+      h('span', { class: 'muted' }, p.voyage ? '航行中' : isl, p.battleId ? ' · 战斗中' : ''),
+    );
+  });
+  const body = h('div', { class: 'col', style: 'align-items:stretch;gap:10px' }, h('h3', {}, `在线（${players.length}/4）`), ...players);
+  if (ctx.net.role() === 'guest') {
+    body.append(
+      h('div', { class: 'muted' }, `你在 ${w.characters[w.hostId]?.name ?? '房主'} 的世界里。角色会自动存到你自己的电脑上。`),
+      button('离开（保存角色）', () => ctx.net.leave()),
+    );
+    return body;
+  }
+  const lan = ctx.net.lan();
+  body.append(
+    h('h3', {}, '局域网 / 直连'),
+    lan
+      ? h('div', {}, '已开放。让朋友在标题画面点“加入联机”，输入：', ...lan.addresses.map((a) => h('div', { class: 'badge', style: 'margin:4px 6px 0 0' }, `${a}:${lan.port}`)), h('div', { class: 'muted' }, `同一台电脑上测试用 127.0.0.1:${lan.port}`))
+      : button('开放局域网联机', async () => {
+          await ctx.net.openLan();
+          ctx.ui.refresh(true);
+        }, { class: 'primary' }),
+    h('h3', {}, 'Steam 好友'),
+  );
+  if (!steamInfo) {
+    body.append(h('div', { class: 'muted' }, '正在检查 Steam……'));
+    void ctx.net.steamStatus().then((s) => {
+      steamInfo = s;
+      ctx.ui.refresh(true);
+    });
+  } else if (!steamInfo.available) {
+    body.append(h('div', { class: 'muted' }, steamInfo.error ?? 'Steam 不可用'));
+  } else {
+    body.append(
+      h('div', { class: 'muted' }, `已登录：${steamInfo.name}（开发期使用测试 App ID ${steamInfo.appId}）`),
+      button(ctx.net.steamLobby() ? '再次邀请好友' : '创建房间并邀请好友', async () => {
+        await ctx.net.openSteam();
+        ctx.ui.refresh(true);
+      }, { class: 'primary' }),
+    );
+  }
+  return body;
 }
 
 // ---------------------------------------------------------------- 絮灵

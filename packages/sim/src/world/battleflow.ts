@@ -198,8 +198,8 @@ export function startTutorialBattle(content: ContentDb, world: WorldState, playe
 
 // ---------------------------------------------------------------- 云主战（DESIGN 5.3，M2）
 
-/** 云主一方的絮灵（确定性：按世界种子生成基因）。 */
-function cloudlordSpirits(content: ContentDb, world: WorldState, cl: Cloudlord): Spirit[] {
+/** 云主一方的絮灵（确定性：按世界种子生成基因；渲染端也用它摆出云主与护卫）。 */
+export function cloudlordSpirits(content: ContentDb, world: WorldState, cl: Cloudlord): Spirit[] {
   return [cl.boss, ...cl.guards].map((u, i) => {
     const rng = createRng(deriveSeed(world.seed, `cloudlord:${cl.id}:${i}`));
     const line = content.lines.get(u.line)!;

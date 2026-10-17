@@ -139,6 +139,32 @@ export const SCENARIOS: Record<string, { readonly desc: string; run(h: ScenarioH
       void h.sail('wheatSlope');
     },
   },
+  lighthouse: {
+    desc: '晴原灯塔：熄灭的灯塔与盘踞在塔下的云主',
+    run: async (h) => {
+      await home(h);
+      await h.sail('sunLighthouse');
+      await until(() => h.mode() === 'explore' && h.world().players['p1']!.islandId === 'sunLighthouse', 30000);
+      h.skipCutscene();
+      h.teleport(5, 0, Math.PI * 1.15);
+      h.setCamera(0.7, 0.32, 11);
+      h.advance(0.5);
+    },
+  },
+  cloudlord: {
+    desc: '单人讨伐云主（3 个位置；看阶段切换的表现用）',
+    run: async (h) => {
+      await home(h);
+      await h.sail('sunLighthouse');
+      await until(() => h.mode() === 'explore' && h.world().players['p1']!.islandId === 'sunLighthouse', 30000);
+      h.skipCutscene();
+      h.teleport(0, -3, Math.PI);
+      await wait(300);
+      const r = await h.act({ type: 'challengeCloudlord', cloudlordId: 'sunPlainsLord' });
+      if (!r.ok) throw new Error(`讨伐失败：${r.error}`);
+      await until(() => h.mode() === 'battle', 5000);
+    },
+  },
   ambush: {
     desc: '唤出第一只伙伴后，蚀化絮灵袭击（首战转场）',
     run: async (h) => {
