@@ -82,7 +82,8 @@ export const skillSchema = z
     name: z.string().min(1).max(8),
     /** 属性；'user' 表示随使用者的主属性（轻击）。 */
     element: z.union([elementSchema, z.literal('user')]),
-    source: z.enum(['basic', 'innate', 'part', 'book']),
+    /** cloudlord：只给云主用的招式（DESIGN 5.3，M2）。 */
+    source: z.enum(['basic', 'innate', 'part', 'book', 'cloudlord']),
     category: z.enum(SKILL_CATEGORIES),
     /** 威力；0 表示不造成伤害。 */
     power: z.int().min(0).max(250),

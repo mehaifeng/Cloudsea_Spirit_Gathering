@@ -1,5 +1,6 @@
 export * from './ailments';
 export * from './buildings';
+export * from './cloudlords';
 export * from './data/economy';
 export { HOME_CHART_POS } from './data/islands';
 export * from './islands';

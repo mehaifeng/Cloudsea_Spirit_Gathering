@@ -10,7 +10,8 @@ export const islandSchema = z.strictObject({
   id: z.string().regex(/^[a-z][A-Za-z0-9]*$/),
   name: z.string().min(1).max(10),
   region: regionSchema,
-  kind: z.enum(['fixed', 'keeper']),
+  /** fixed 野外 / keeper 守岛人岛 / lighthouse 灯塔岛（云主盘踞，M2）。 */
+  kind: z.enum(['fixed', 'keeper', 'lighthouse']),
   /** 雾浓度 0–5，提灯等级不低于它才能进入（DESIGN 3.3）。 */
   fogLevel: z.int().min(0).max(5),
   radius: z.number().min(10).max(80),
@@ -34,6 +35,8 @@ export const islandSchema = z.strictObject({
   gather: z.array(z.strictObject({ kind: gatherKindSchema, count: z.int().min(1).max(30) })),
   /** 该岛的守岛人（kind = keeper）。 */
   keeper: z.string().optional(),
+  /** 盘踞在该岛的云主（kind = lighthouse）。 */
+  cloudlord: z.string().optional(),
   description: z.string().min(1),
 });
 export type Island = z.infer<typeof islandSchema>;

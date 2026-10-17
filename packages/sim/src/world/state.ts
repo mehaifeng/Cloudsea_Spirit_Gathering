@@ -148,6 +148,14 @@ export interface ActiveBattle {
   readonly aiSeed: number;
   /** 对手被“听风”看破时，房主提前定下它下回合的行动并公开（DESIGN 5.1）。 */
   preparedAi: SideActions | null;
+  /** 参战玩家（第一位是发起者，即 playerId）；多人战斗（M2）。 */
+  participants: string[];
+  /** 本回合已经提交的行动（按玩家）。 */
+  submitted: Record<string, SideActions>;
+  /** 多人战斗的选择截止 tick（单人为 null）。 */
+  deadlineTick: number | null;
+  /** 云主战：云主 id。 */
+  readonly cloudlordId: string | null;
 }
 
 /**
@@ -172,4 +180,6 @@ export interface WorldState {
   lastDailyDay: number;
   battles: Record<string, ActiveBattle>;
   chapter: number;
+  /** 已重燃的灯塔（被打败的云主 id，M2）。 */
+  lighthousesLit: string[];
 }

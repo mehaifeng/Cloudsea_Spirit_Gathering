@@ -3,6 +3,7 @@ import { createRng, deriveSeed } from '../rng';
 import { healSpirit, maxHpOf } from '../spirit/condition';
 import type { Spirit } from '../spirit/types';
 import type { WorldEvent } from './events';
+import { tickBattles } from './battleflow';
 import { homeIslandId } from './create';
 import { hasRoomForSpirit, tickHome } from './home';
 import { newId } from './ids';
@@ -100,8 +101,10 @@ export function advanceWorld(content: ContentDb, world: WorldState, dt: number):
   for (const home of Object.values(world.homes)) tickHome(content, world, home, dt, events);
   for (const c of Object.values(world.characters)) tickSpirits(content, world, c, dt, events);
 
-  // 活跃岛：有玩家在的固定岛
-  const active = new Set(Object.values(world.players).map((p) => p.islandId));
+  tickBattles(content, world, events);
+
+  // 活跃岛：有在线玩家在的固定岛（DESIGN 9.2）
+  const active = new Set(Object.entries(world.players).filter(([id]) => world.characters[id]).map(([, p]) => p.islandId));
   for (const id of active) {
     const island = content.islands.get(id);
     if (!island || island.kind !== 'fixed') continue;

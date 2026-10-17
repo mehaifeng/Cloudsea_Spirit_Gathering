@@ -5,6 +5,8 @@ import { BLUEPRINT_SHOP, coreUpgradeCost, ORDER_TEMPLATES, toolUpgradeCost } fro
 import { ISLANDS } from './data/islands';
 import { ITEMS } from './data/items';
 import { DIALOGUE, KEEPERS } from './data/keepers';
+import { CLOUDLORDS } from './data/cloudlords';
+import { cloudlordSchema, type Cloudlord, type CloudlordInput } from './cloudlords';
 import { LINES } from './data/lines';
 import { PARTS } from './data/parts';
 import { SKILLS } from './data/skills';
@@ -27,6 +29,7 @@ export interface RawContent {
   readonly islands?: readonly IslandInput[];
   readonly keepers?: readonly KeeperInput[];
   readonly dialogue?: readonly DialogueLine[];
+  readonly cloudlords?: readonly CloudlordInput[];
 }
 
 export interface FormEntry {
@@ -52,6 +55,7 @@ export interface ContentDb {
   readonly islands: ReadonlyMap<string, Island>;
   readonly keepers: ReadonlyMap<string, Keeper>;
   readonly dialogue: readonly DialogueLine[];
+  readonly cloudlords: ReadonlyMap<string, Cloudlord>;
 }
 
 export class ContentError extends Error {
@@ -196,6 +200,23 @@ export function buildContent(raw: RawContent): ContentDb {
     }
     for (const d of dialogue) if (!keepers.has(d.keeper)) issues.push(`dialogue: 守岛人 ${d.keeper} 不存在`);
   }
+  // 云主：引用的岛、进化线、形态、招式都要存在；灯塔岛与云主一一对应
+  const cloudlords = indexById('cloudlord', parseAll('cloudlord', cloudlordSchema, raw.cloudlords ?? []), issues);
+  for (const cl of cloudlords.values()) {
+    const isl = islands.get(cl.island);
+    if (!isl || isl.kind !== 'lighthouse' || isl.cloudlord !== cl.id) issues.push(`cloudlord ${cl.id}: 灯塔岛 ${cl.island} 不存在或没有指向它`);
+    for (const u of [cl.boss, ...cl.guards]) {
+      const line = lines.get(u.line);
+      if (!line) issues.push(`cloudlord ${cl.id}: 进化线 ${u.line} 不存在`);
+      else if (!line.forms[u.formIndex]) issues.push(`cloudlord ${cl.id}: ${u.line} 没有第 ${u.formIndex} 段`);
+    }
+    for (const sk of [...cl.skills, ...cl.phases.flatMap((p) => p.skills)]) if (!skills.has(sk)) issues.push(`cloudlord ${cl.id}: 招式 ${sk} 不存在`);
+    for (let i = 1; i < cl.phases.length; i++) if (cl.phases[i]!.hpBelow >= cl.phases[i - 1]!.hpBelow) issues.push(`cloudlord ${cl.id}: 阶段阈值要从高到低`);
+  }
+  for (const isl of islands.values()) {
+    if ((isl.kind === 'lighthouse') !== !!isl.cloudlord) issues.push(`island ${isl.id}: 灯塔岛必须（且只有它）指定云主`);
+    if (isl.cloudlord && !cloudlords.has(isl.cloudlord)) issues.push(`island ${isl.id}: 云主 ${isl.cloudlord} 不存在`);
+  }
 
   if (issues.length > 0) throw new ContentError(issues);
   return {
@@ -212,6 +233,7 @@ export function buildContent(raw: RawContent): ContentDb {
     islands,
     keepers,
     dialogue,
+    cloudlords,
   };
 }
 
@@ -239,6 +261,7 @@ export function getContent(): ContentDb {
     islands: ISLANDS,
     keepers: KEEPERS,
     dialogue: DIALOGUE,
+    cloudlords: CLOUDLORDS,
   });
   return cached;
 }

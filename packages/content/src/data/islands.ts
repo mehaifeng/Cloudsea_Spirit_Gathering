@@ -107,6 +107,25 @@ export const ISLANDS: readonly IslandInput[] = [
     keeper: 'lan',
     description: '守岛人岚的岛，挂满了风铃，风一大就叮叮当当。',
   },
+  {
+    id: 'sunLighthouse',
+    name: '晴原灯塔',
+    region: 'sunPlains',
+    kind: 'lighthouse',
+    fogLevel: 0,
+    radius: 30,
+    seed: 707,
+    theme: 'terrace',
+    altitude: 8,
+    chartPos: { x: 0.9, y: 0.38 },
+    skiffLevel: 1,
+    wildLevel: { min: 10, max: 14 },
+    wildCount: 0,
+    blightChance: 0,
+    gather: [{ kind: 'rock', count: 4 }],
+    cloudlord: 'sunPlainsLord',
+    description: '熄灭的灯塔立在台地顶上，塔下盘踞着被蚀雾吞没的曦冕。（M2：可以几个人一起讨伐）',
+  },
 ];
 
 /** 家园岛的星图位置（中枢群岛）。 */

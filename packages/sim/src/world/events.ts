@@ -13,6 +13,13 @@ export type WorldEvent =
   | { readonly t: 'sailed'; readonly playerId: string; readonly islandId: string }
   | { readonly t: 'voyageStart'; readonly playerId: string; readonly from: string; readonly to: string; readonly departTick: number; readonly arriveTick: number }
   | { readonly t: 'battleStart'; readonly playerId: string; readonly battleId: string }
+  /** 有人加入了战斗（战斗按新人数重建，M2）。 */
+  | { readonly t: 'battleJoined'; readonly playerId: string; readonly battleId: string; readonly joiner: string }
+  /** 云主被打败，灯塔重燃（M2）。 */
+  | { readonly t: 'lighthouseLit'; readonly playerId: string; readonly cloudlordId: string }
+  /** 玩家加入 / 离开世界（M2）。 */
+  | { readonly t: 'playerJoined'; readonly playerId: string; readonly name: string }
+  | { readonly t: 'playerLeft'; readonly playerId: string; readonly name: string }
   | { readonly t: 'battleTurn'; readonly playerId: string; readonly battleId: string; readonly events: readonly BattleEvent[] }
   | {
       readonly t: 'battleEnd';

@@ -97,6 +97,7 @@ export function createWorld(content: ContentDb, o: { seed: number; hostId: strin
     lastDailyDay: 0,
     battles: {},
     chapter: 1,
+    lighthousesLit: [],
   };
 }
 
@@ -113,7 +114,7 @@ export function joinWorld(world: WorldState, character: CharacterState): void {
   }
 }
 
-/** 玩家离开：角色从世界里拿走（其絮灵在世界里的工位显示“主人不在”）。 */
+/** 玩家离开：角色从世界里拿走（其絮灵在世界里的工位显示“主人不在”）。战斗与航行先用 playerLeaves 收尾。 */
 export function leaveWorld(world: WorldState, playerId: string): CharacterState | undefined {
   const c = world.characters[playerId];
   delete world.characters[playerId];

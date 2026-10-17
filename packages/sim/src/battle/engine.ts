@@ -24,6 +24,7 @@ import {
   stageMultiplier,
   weatherMultiplier,
 } from './formulas';
+import { EXTRA_ACTION_OFFSET } from './types';
 import type {
   BattleAction,
   BattleEvent,
@@ -103,6 +104,9 @@ function buildUnit(content: ContentDb, spirit: Spirit, side: SideIndex, index: n
     ailment: cond?.ailment ? { ...cond.ailment } : null,
     stages,
     timedStages: (cond?.timedStages ?? []).map((t) => ({ stat: t.stat, delta: t.delta, endsAfterTurn: t.turnsLeft })),
+    extraActions: 0,
+    phases: [],
+    phase: 0,
     downed: false,
     captured: false,
     charging: null,
@@ -139,6 +143,7 @@ export function createBattle(content: ContentDb, setup: BattleSetup): BattleStat
     intercepts: {},
     revealed: [],
     protectedSide: setup.protectedSide ?? null,
+    capturedBy: {},
   };
 }
 
@@ -238,15 +243,22 @@ function targetsEnemy(skill: Skill): boolean {
 }
 
 /** 校验一方本回合的行动；合法返回 null，否则返回原因。 */
-export function validateActions(content: ContentDb, state: BattleState, side: SideIndex, actions: SideActions): string | null {
+/**
+ * 校验一方的行动。requireAll = false 时不要求每个位置都选了（多人战斗里先收到的一部分，M2）。
+ * 键 ≥ EXTRA_ACTION_OFFSET 是有额外行动的单位（云主）的第二个行动。
+ */
+export function validateActions(content: ContentDb, state: BattleState, side: SideIndex, actions: SideActions, opts: { requireAll?: boolean } = {}): string | null {
   if (state.outcome) return '战斗已经结束';
   const s = state.sides[side];
   let qi = 0;
   const switchIns = new Set<number>();
   for (const [slotStr, action] of Object.entries(actions)) {
-    const slot = Number(slotStr);
+    const key = Number(slotStr);
+    const extra = key >= EXTRA_ACTION_OFFSET;
+    const slot = extra ? key - EXTRA_ACTION_OFFSET : key;
     const unit = unitAt(state, { side, slot });
     if (!isAlive(unit)) return `位置 ${slot} 没有可行动的絮灵`;
+    if (extra && (unit.extraActions <= 0 || action.type !== 'skill')) return `${unit.name} 没有额外行动`;
     if (unit.charging) continue; // 蓄力中的单位自动行动
     switch (action.type) {
       case 'skill': {
@@ -269,6 +281,7 @@ export function validateActions(content: ContentDb, state: BattleState, side: Si
       }
       case 'switch': {
         if (!benchUnits(state, side).includes(action.unitIndex)) return '只能换上还能战斗的替补';
+        if (s.units[action.unitIndex]!.ownerId !== unit.ownerId) return '只能换上自己的替补';
         if (switchIns.has(action.unitIndex)) return '同一只替补不能换上两次';
         switchIns.add(action.unitIndex);
         break;
@@ -284,8 +297,10 @@ export function validateActions(content: ContentDb, state: BattleState, side: Si
         break;
     }
   }
-  for (const { slot, unit } of activeUnits(state, side)) {
-    if (!unit.charging && !(slot in actions)) return `位置 ${slot} 还没有选择行动`;
+  if (opts.requireAll !== false) {
+    for (const { slot, unit } of activeUnits(state, side)) {
+      if (!unit.charging && !(slot in actions)) return `位置 ${slot} 还没有选择行动`;
+    }
   }
   if (qi > s.qi) return `云气不足（需要 ${qi}，现有 ${s.qi}）`;
   return null;
@@ -348,12 +363,19 @@ class TurnResolver {
           continuing,
           done: false,
         });
+        // 云主：每回合多行动几次（第二个行动用 位置号 + EXTRA_ACTION_OFFSET 的键）
+        for (let k = 0; k < unit.extraActions; k++) {
+          const extra = actions[side][slot + EXTRA_ACTION_OFFSET * (k + 1)];
+          if (!extra || extra.type !== 'skill') continue;
+          this.queue.push({ side, slot, unitIndex, action: extra, priority: this.priorityOf(extra), tiebreak: this.rng.next(), continuing: false, done: false });
+        }
       }
     }
 
     for (let next = this.pickNext(); next && !s.outcome; next = this.pickNext()) {
       next.done = true;
       this.execute(next);
+      this.checkPhases();
       this.checkOutcome();
     }
     if (!s.outcome) this.endTurn();
@@ -396,7 +418,7 @@ class TurnResolver {
       case 'flee':
         return this.doFlee(e.side);
       case 'dew':
-        return this.doDew(e.side, e.action.quality, e.action.target);
+        return this.doDew(e.side, e.action.quality, e.action.target, unit.ownerId);
       case 'skill':
         return this.doSkill(e, unit, e.action);
     }
@@ -421,7 +443,7 @@ class TurnResolver {
     if (success) this.s.outcome = { winner: null, reason: 'fled' };
   }
 
-  doDew(side: SideIndex, quality: 'normal' | 'refined' | 'superior', target: SlotRef): void {
+  doDew(side: SideIndex, quality: 'normal' | 'refined' | 'superior', target: SlotRef, by: string): void {
     const t = unitAt(this.s, target);
     if (!isAlive(t) || !t.wild || target.side === side) return;
     const chance = catchChance(t.rarity, t.hp / t.maxHp, t.ailment !== null, quality);
@@ -430,6 +452,7 @@ class TurnResolver {
     if (success) {
       t.captured = true;
       t.charging = null;
+      this.s.capturedBy[t.uid] = by;
     }
   }
 
@@ -508,6 +531,22 @@ class TurnResolver {
     for (const effect of effects) {
       if ('when' in effect && effect.when && !this.conditionMet(effect)) continue;
       this.applyEffect(effect, e, actor, hit, synergy, action.timeout === true);
+    }
+  }
+
+  /** 云主换阶段：生命比例降到阈值以下时换招式、加层数（DESIGN 5.3，M2）。 */
+  checkPhases(): void {
+    for (const sd of this.s.sides) {
+      for (const u of sd.units) {
+        if (!isAlive(u)) continue;
+        while (u.phase < u.phases.length && u.hp / u.maxHp <= u.phases[u.phase]!.hpBelow) {
+          const ph = u.phases[u.phase]!;
+          u.phase++;
+          u.skills = [...ph.skills];
+          this.events.push({ t: 'phase', uid: u.uid, phase: u.phase, line: ph.line });
+          for (const st of ph.stages) this.applyStage(u, st.stat, st.delta, undefined);
+        }
+      }
     }
   }
 
@@ -752,7 +791,9 @@ class TurnResolver {
       sd.active.forEach((idx, slot) => {
         const cur: BattleUnit | null = idx === null ? null : sd.units[idx]!;
         if (cur && !cur.downed && !cur.captured) return;
-        const bench = benchUnits(s, side)[0];
+        // 多人：优先补同一位主人的替补（M2）
+        const benches = benchUnits(s, side);
+        const bench = (cur && benches.find((i) => sd.units[i]!.ownerId === cur.ownerId)) ?? benches[0];
         if (bench === undefined) {
           if (cur) sd.active[slot] = null;
           return;
