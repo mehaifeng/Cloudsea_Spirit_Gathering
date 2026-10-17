@@ -8,3 +8,4 @@ export * from './environment';
 export * from './buildings';
 export * from './fx';
 export * from './skiff';
+export * from './water';

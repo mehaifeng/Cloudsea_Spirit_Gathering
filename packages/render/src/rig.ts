@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { patchWaterTint } from './water';
 import { clamp } from './util';
 
 /** 蒙皮权重函数：返回 [骨骼, 权重, 骨骼2?, 权重2?]。 */
@@ -96,7 +97,7 @@ export const segGeo = (rt: number, rb: number, len: number, rs: number): THREE.B
   new THREE.CylinderGeometry(rt, rb, len, rs, 2).translate(0, -len / 2, 0);
 
 export const skinMat = (): THREE.MeshStandardMaterial =>
-  new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, side: THREE.DoubleSide });
+  patchWaterTint(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, side: THREE.DoubleSide }));
 
 /** 两骨 IK（腿平面内），kneeSign +1 = 膝盖朝前。 */
 export function solveLeg(

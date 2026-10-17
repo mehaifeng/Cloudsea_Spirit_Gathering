@@ -126,22 +126,125 @@ export function makeBuildingView(type: string, w: number, d: number, seed: numbe
 
   switch (type) {
     case 'islandCore': {
-      // 岛核：石台 + 石柱 + 漂浮的光晶，比人高一截
-      mesh(body, new THREE.CylinderGeometry(0.95, 1.1, 0.45, 8), mat(C.stone), 0, 0.22, 0);
-      mesh(body, new THREE.CylinderGeometry(0.7, 0.85, 0.3, 8), mat(C.stoneDark), 0, 0.6, 0);
-      mesh(body, new THREE.CylinderGeometry(0.22, 0.32, 2.7, 6), mat(C.stoneDark), 0, 2.1, 0);
-      for (let i = 0; i < 3; i++) {
-        const a = (i / 3) * Math.PI * 2;
-        const r = mesh(body, new THREE.BoxGeometry(0.12, 0.9, 0.12), mat(C.stone), Math.cos(a) * 0.36, 3.1, Math.sin(a) * 0.36);
-        r.rotation.z = Math.cos(a) * 0.25;
-        r.rotation.x = -Math.sin(a) * 0.25;
+      // 岛核（v0.7 重做）：八角石台（青苔、扶壁、小石灯）→ 收分石柱（刻带 + 发光符文）→
+      // 石爪托架与黄铜环 → 拉长的光晶 + 绕着转的碎晶；地上一圈光点标出核心塔的治疗范围（6 米）。
+      const stone = mat(C.stone);
+      const dark = mat(C.stoneDark);
+      const moss = mat(0x7fa35a);
+      const brass = mat(0xc9a35a, { metalness: 0.3, roughness: 0.6 });
+      const runeMat = new THREE.MeshStandardMaterial({ color: 0xffe6b0, emissive: 0xffb84a, emissiveIntensity: 0.7, flatShading: true });
+      glows.push(runeMat);
+      // 台座：两层八角台
+      mesh(body, new THREE.CylinderGeometry(0.98, 1.0, 0.22, 8), dark, 0, 0.11, 0).rotation.y = Math.PI / 8;
+      mesh(body, new THREE.CylinderGeometry(0.82, 0.92, 0.26, 8), stone, 0, 0.35, 0).rotation.y = Math.PI / 8;
+      mesh(body, new THREE.CylinderGeometry(0.62, 0.74, 0.16, 8), dark, 0, 0.56, 0).rotation.y = Math.PI / 8;
+      // 青苔（贴在台座上的扁块）
+      for (let i = 0; i < 5; i++) {
+        const a = rnd() * Math.PI * 2;
+        const m = mesh(body, new THREE.BoxGeometry(0.28 + rnd() * 0.2, 0.04, 0.18 + rnd() * 0.12), moss, Math.cos(a) * 0.8, 0.24 + rnd() * 0.02, Math.sin(a) * 0.8);
+        m.rotation.y = -a;
+        m.castShadow = false;
       }
+      // 四道扶壁：从台座斜撑到石柱
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        const fin = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.1, 0.42), stone);
+        fin.position.set(Math.cos(a) * 0.48, 1.05, Math.sin(a) * 0.48);
+        fin.rotation.y = -a;
+        fin.rotation.z = 0;
+        fin.geometry.translate(0, 0, 0);
+        const pivot = new THREE.Group();
+        pivot.add(fin);
+        body.add(pivot);
+        fin.castShadow = true;
+        // 扶壁顶端收窄
+        const cap = mesh(body, new THREE.ConeGeometry(0.12, 0.3, 4), dark, Math.cos(a) * 0.46, 1.72, Math.sin(a) * 0.46);
+        cap.rotation.y = a;
+      }
+      // 主柱：收分八角柱，分三段，段间有刻带
+      const segs: Array<[number, number, number, number]> = [
+        [0.36, 0.42, 1.1, 1.2],
+        [0.3, 0.36, 1.0, 2.25],
+        [0.24, 0.3, 0.9, 3.2],
+      ];
+      for (const [rt, rb, h2, y] of segs) {
+        mesh(body, new THREE.CylinderGeometry(rt, rb, h2, 8), stone, 0, y, 0).rotation.y = Math.PI / 8;
+        mesh(body, new THREE.CylinderGeometry(rb + 0.05, rb + 0.05, 0.1, 8), dark, 0, y - h2 / 2 + 0.05, 0).rotation.y = Math.PI / 8;
+      }
+      // 发光符文：贴在柱面上的细条与小菱形
+      for (let i = 0; i < 8; i += 2) {
+        const a = (i / 8) * Math.PI * 2;
+        for (const [y, r] of [[1.25, 0.39], [2.3, 0.33], [3.2, 0.27]] as const) {
+          const rune = mesh(body, new THREE.BoxGeometry(0.05, 0.42, 0.02), runeMat, Math.cos(a) * r, y, Math.sin(a) * r);
+          rune.rotation.y = -a + Math.PI / 2;
+          rune.castShadow = false;
+          const dot = mesh(body, new THREE.OctahedronGeometry(0.045, 0), runeMat, Math.cos(a) * (r + 0.01), y + 0.3, Math.sin(a) * (r + 0.01));
+          dot.castShadow = false;
+        }
+      }
+      // 托架：黄铜环 + 四只向外张开再向内收的石爪
+      const cradleY = 3.72;
+      const ring = mesh(body, new THREE.TorusGeometry(0.3, 0.05, 5, 12), brass, 0, cradleY, 0);
+      ring.rotation.x = Math.PI / 2;
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        const claw = new THREE.Group();
+        claw.position.set(Math.cos(a) * 0.26, cradleY, Math.sin(a) * 0.26);
+        claw.rotation.y = -a;
+        body.add(claw);
+        const lower = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 0.1), dark);
+        lower.position.set(0.12, 0.22, 0);
+        lower.rotation.z = -0.5;
+        claw.add(lower);
+        const upper = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.08), dark);
+        upper.position.set(0.2, 0.62, 0);
+        upper.rotation.z = 0.35;
+        claw.add(upper);
+        const tip = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 4), brass);
+        tip.position.set(0.13, 0.88, 0);
+        tip.rotation.z = 0.35;
+        claw.add(tip);
+      }
+      // 光晶：拉长的八面体（底尖插在托架里）+ 三片绕着转的碎晶
       const coreMat = new THREE.MeshStandardMaterial({ color: 0xfff1c8, emissive: 0xffc56a, emissiveIntensity: 0.8, flatShading: true });
-      const crystal = mesh(body, new THREE.OctahedronGeometry(0.42, 0), coreMat, 0, 3.9, 0);
       glows.push(coreMat);
+      const crystal = mesh(body, new THREE.OctahedronGeometry(0.34, 0), coreMat, 0, cradleY + 0.55, 0);
+      crystal.scale.set(1, 1.7, 1);
+      const shards: THREE.Mesh[] = [];
+      for (let i = 0; i < 3; i++) {
+        const sh = mesh(body, new THREE.OctahedronGeometry(0.09, 0), coreMat, 0, cradleY + 0.6, 0);
+        sh.scale.set(1, 1.6, 1);
+        shards.push(sh);
+      }
+      // 两盏小石灯（台座上）
+      for (const a of [Math.PI * 0.25, Math.PI * 1.25]) {
+        mesh(body, new THREE.BoxGeometry(0.16, 0.26, 0.16), stone, Math.cos(a) * 0.7, 0.6, Math.sin(a) * 0.7);
+        const l = mesh(body, new THREE.BoxGeometry(0.1, 0.1, 0.1), runeMat, Math.cos(a) * 0.7, 0.78, Math.sin(a) * 0.7);
+        l.castShadow = false;
+        mesh(body, new THREE.ConeGeometry(0.14, 0.12, 4), dark, Math.cos(a) * 0.7, 0.89, Math.sin(a) * 0.7).rotation.y = Math.PI / 4;
+      }
+      // 治疗范围：地上一圈缓缓起伏的光点（半径 6 米，与 sim 的 CORE_HEAL 一致）
+      const moteMat = new THREE.MeshStandardMaterial({ color: 0xffeccc, emissive: 0xffc56a, emissiveIntensity: 0.9, flatShading: true, transparent: true, opacity: 0.8 });
+      glows.push(moteMat);
+      const motes: THREE.Mesh[] = [];
+      for (let i = 0; i < 28; i++) {
+        const m = mesh(body, new THREE.OctahedronGeometry(0.06, 0), moteMat, 0, 0, 0);
+        m.castShadow = false;
+        motes.push(m);
+      }
       animate = (_s, t) => {
         crystal.rotation.y = t * 0.6;
-        crystal.position.y = 3.9 + Math.sin(t * 1.5) * 0.08;
+        crystal.position.y = cradleY + 0.55 + Math.sin(t * 1.5) * 0.06;
+        shards.forEach((sh, i) => {
+          const a = t * 0.9 + (i / 3) * Math.PI * 2;
+          sh.position.set(Math.cos(a) * 0.62, cradleY + 0.55 + Math.sin(t * 1.3 + i) * 0.18, Math.sin(a) * 0.62);
+          sh.rotation.y = t * 2;
+        });
+        runeMat.emissiveIntensity = 0.55 + Math.sin(t * 1.2) * 0.2;
+        motes.forEach((m, i) => {
+          const a = (i / motes.length) * Math.PI * 2 + t * 0.05;
+          m.position.set(Math.cos(a) * 6, 0.25 + Math.sin(t * 1.4 + i * 1.7) * 0.12, Math.sin(a) * 6);
+        });
       };
       break;
     }

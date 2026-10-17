@@ -8,14 +8,16 @@ import { mat, mulberry } from './util';
  * 甲板、齐腰栏杆（左舷留一道登船口）、中桅 + 桅顶云气晶体与黄铜笼、船头灯柱与吊灯、
  * 两侧推进舱（挂架插进船身）+ 螺旋桨与导流环（支撑杆连着舱体）、船尾舵、船头饰。
  * 失事版：船底破洞、龙骨折裂、碎木板支棱出来；甲板以上基本完好，只是核心熄灭、一根栏杆折断。
+ * v0.7：两舷都有登船口；可放下的舷梯（按高差自适应倾角，见 makeGangway）；可在“完好 / 破损”之间切换
+ * （开场迫降时触地那一刻才换成破损的船底）。
  *
  * 坐标：船头朝 +z，甲板面在 y = SKIFF_DECK_Y（船体局部坐标）。
  */
 export const SKIFF_DECK_Y = 0.68;
 /** 船身半长（船尾到船头约 -2.3..2.55）。 */
 export const SKIFF_LENGTH = { stern: -2.3, bow: 2.55 } as const;
-/** 左舷（-x）登船口的 z 范围。 */
-export const SKIFF_GATE = { side: -1, z0: -0.55, z1: 0.25 } as const;
+/** 登船口的 z 范围（两舷都有，v0.7）。 */
+export const SKIFF_GATE = { z0: -0.55, z1: 0.25 } as const;
 
 /** 两侧推进舱：舱体中心 z、向外伸出的最远处（含导流环）、前后半长。碰撞要算上它们。 */
 export const SKIFF_POD = { z: -1.35, reach: 1.62, half: 0.85 } as const;
@@ -45,6 +47,8 @@ export interface SkiffView {
   update(t: number, speed: number): void;
   /** 云气核心亮度 0..1（开场迫降时闪烁、熄灭）。 */
   setCore(level: number): void;
+  /** 切换完好 / 破损（只有 damageable 或 wrecked 的云舟有破损版）。 */
+  setDamaged(damaged: boolean): void;
 }
 
 const WOOD = { light: 0xa8774b, mid: 0x9a6a43, dark: 0x6b4a35, keel: 0x5a3e2c, trim: 0xe07a5f, deck: 0xc9a27a, brass: 0xc9a35a, teal: 0x3f8a86 };
@@ -118,20 +122,31 @@ function bar(parent: THREE.Object3D, a: THREE.Vector3, b: THREE.Vector3, thick: 
   return m;
 }
 
-export function makeSkiff(opts: { wrecked?: boolean; seed?: number } = {}): SkiffView {
+export function makeSkiff(opts: { wrecked?: boolean; damageable?: boolean; seed?: number } = {}): SkiffView {
   const wrecked = !!opts.wrecked;
+  const twoState = wrecked || !!opts.damageable;
   const rnd = mulberry(opts.seed ?? 7);
   const group = new THREE.Group();
   const hull = new THREE.Group();
   group.add(hull);
   const glows: THREE.MeshStandardMaterial[] = [];
+  /** 完好时显示的零件 / 破损时显示的零件。 */
+  const intact: THREE.Object3D[] = [];
+  const broken: THREE.Object3D[] = [];
+  const hullMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, side: THREE.DoubleSide });
 
-  // 船身
-  const { geo, holes } = hullGeometry(wrecked, rnd);
-  const hullMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, side: THREE.DoubleSide }));
-  hullMesh.castShadow = true;
-  hullMesh.receiveShadow = true;
-  hull.add(hullMesh);
+  // 船身（可破损的云舟两份：完好的与破洞的）
+  const addHull = (damaged: boolean): THREE.Vector3[] => {
+    const { geo, holes } = hullGeometry(damaged, damaged ? mulberry((opts.seed ?? 7) + 101) : rnd);
+    const m = new THREE.Mesh(geo, hullMat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    hull.add(m);
+    (damaged ? broken : intact).push(m);
+    return holes;
+  };
+  addHull(false);
+  const holes = twoState ? addHull(true) : [];
 
   // 甲板：按船舷形状挤出的木板面
   const shape = new THREE.Shape();
@@ -160,28 +175,29 @@ export function makeSkiff(opts: { wrecked?: boolean; seed?: number } = {}): Skif
   for (const sx of [-1, 1]) {
     const tops: THREE.Vector3[] = [];
     postZ.forEach((z, i) => {
-      if (sx === 1 && (z === SKIFF_GATE.z0 || z === SKIFF_GATE.z1)) return;
       const x = sx * (skiffHalfWidth(z) - 0.05);
       const base = gunwaleY(z);
       const h = railTop - base;
       const post = box(hull, 0.06, h + 0.05, 0.06, WOOD.dark, x, base + h / 2 - 0.02, z);
-      // 失事：右舷船尾一根立柱折断
-      if (wrecked && sx === 1 && i === 1) {
-        post.scale.y = 0.45;
-        post.position.y = base + (h * 0.45) / 2;
-        post.rotation.z = 0.5;
-        tops.push(new THREE.Vector3(NaN, 0, 0));
+      // 破损：右舷船尾一根立柱折断（完好版用整根）
+      if (twoState && sx === 1 && i === 1) {
+        intact.push(post);
+        const stub = box(hull, 0.06, (h + 0.05) * 0.45, 0.06, WOOD.dark, x, base + (h * 0.45) / 2, z);
+        stub.rotation.z = 0.5;
+        broken.push(stub);
+        tops.push(new THREE.Vector3(x, railTop, z));
+        (tops[tops.length - 1] as THREE.Vector3 & { fragile?: boolean }).fragile = true;
         return;
       }
       tops.push(new THREE.Vector3(x, railTop, z));
     });
     for (let i = 0; i < tops.length - 1; i++) {
-      const a = tops[i]!;
-      const b = tops[i + 1]!;
-      if (Number.isNaN(a.x) || Number.isNaN(b.x)) continue;
-      // 登船口两根门柱之间不连扶手
-      if (sx === -1 && a.z === SKIFF_GATE.z0 && b.z === SKIFF_GATE.z1) continue;
-      bar(hull, a, b, 0.06, WOOD.dark);
+      const a = tops[i]! as THREE.Vector3 & { fragile?: boolean };
+      const b = tops[i + 1]! as THREE.Vector3 & { fragile?: boolean };
+      // 两舷登船口的门柱之间不连扶手
+      if (a.z === SKIFF_GATE.z0 && b.z === SKIFF_GATE.z1) continue;
+      const r = bar(hull, a, b, 0.06, WOOD.dark);
+      if (a.fragile || b.fragile) intact.push(r);
     }
   }
   // 船尾横栏（连两舷最后一根立柱）
@@ -245,6 +261,7 @@ export function makeSkiff(opts: { wrecked?: boolean; seed?: number } = {}): Skif
 
   // 两侧推进舱：挂架（插进船身）→ 舱体 → 尾锥 → 螺旋桨毂与桨叶；导流环用三根撑杆连在舱体上
   const props: THREE.Group[] = [];
+  let bentBlade: THREE.Object3D | null = null;
   const ringMat = new THREE.MeshStandardMaterial({ color: 0xbfe8ff, emissive: 0x8fd1f0, emissiveIntensity: 0.6, flatShading: true });
   glows.push(ringMat);
   const rings: THREE.Mesh[] = [];
@@ -286,8 +303,7 @@ export function makeSkiff(opts: { wrecked?: boolean; seed?: number } = {}): Skif
       arm.add(blade);
       prop.add(arm);
     }
-    // 失事：右侧螺旋桨一片桨叶折弯
-    if (wrecked && sx === 1) (prop.children[2] as THREE.Group).children[0]!.rotation.x = 0.9;
+    if (twoState && sx === 1) bentBlade = (prop.children[2] as THREE.Group).children[0]!;
     props.push(prop);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.035, 5, 18), ringMat);
     ring.position.z = -0.74;
@@ -299,15 +315,25 @@ export function makeSkiff(opts: { wrecked?: boolean; seed?: number } = {}): Skif
     }
   }
 
-  // 失事：破洞边支棱出来的碎木板
-  if (wrecked) {
+  // 破损：破洞边支棱出来的碎木板
+  if (twoState) {
+    const r2 = mulberry((opts.seed ?? 7) + 7);
     for (const hp of holes) {
       for (let k = 0; k < 2; k++) {
-        const shard = box(hull, 0.05, 0.03, 0.35 + rnd() * 0.25, rnd() < 0.5 ? WOOD.mid : WOOD.keel, hp.x * (0.9 + rnd() * 0.2), hp.y - 0.02, hp.z + (rnd() - 0.5) * 0.3);
-        shard.rotation.set((rnd() - 0.5) * 1.2, (rnd() - 0.5) * 0.8, (rnd() - 0.5) * 1.4);
+        const shard = box(hull, 0.05, 0.03, 0.35 + r2() * 0.25, r2() < 0.5 ? WOOD.mid : WOOD.keel, hp.x * (0.9 + r2() * 0.2), hp.y - 0.02, hp.z + (r2() - 0.5) * 0.3);
+        shard.rotation.set((r2() - 0.5) * 1.2, (r2() - 0.5) * 0.8, (r2() - 0.5) * 1.4);
+        broken.push(shard);
       }
     }
   }
+  let damaged = false;
+  const applyDamage = (d: boolean) => {
+    damaged = d && twoState;
+    for (const o of intact) o.visible = !damaged;
+    for (const o of broken) o.visible = damaged;
+    if (bentBlade) bentBlade.rotation.x = damaged ? 0.9 : 0;
+  };
+  applyDamage(wrecked);
 
   const seats = [new THREE.Vector3(-0.15, SKIFF_DECK_Y, 0.55), new THREE.Vector3(-0.38, SKIFF_DECK_Y, -1.45), new THREE.Vector3(0.38, SKIFF_DECK_Y, -1.45), new THREE.Vector3(0.3, SKIFF_DECK_Y, 1.15)];
 
@@ -323,18 +349,91 @@ export function makeSkiff(opts: { wrecked?: boolean; seed?: number } = {}): Skif
     group,
     seats,
     glows,
+    setDamaged(d) {
+      applyDamage(d);
+    },
     setCore(level) {
       coreLevel = level;
       applyCore();
     },
     update(t, speed) {
       core.rotation.y = t * 1.2 * coreLevel;
-      if (wrecked) return;
+      if (damaged || wrecked) return;
       for (const p of props) p.rotation.z = t * (4 + speed * 30);
       for (const r of rings) r.scale.setScalar(1 + Math.sin(t * 6) * 0.05 * (0.3 + speed));
       hull.position.y = Math.sin(t * 1.4) * 0.06;
       hull.rotation.z = Math.sin(t * 0.9) * 0.025;
       hull.rotation.x = -speed * 0.06;
+    },
+  };
+}
+
+/**
+ * 舷梯（v0.7）：从登船口放到地面 / 码头的木板坡道，两侧有扶绳。
+ * 局部坐标：原点在甲板边缘（登船口），沿 +x 向外、向下；set(run, drop, extend) 按水平距离与落差摆好，
+ * extend 0..1 控制伸出多少（放下 / 收起的动画）。
+ */
+export interface GangwayView {
+  readonly group: THREE.Group;
+  set(run: number, drop: number, extend: number): void;
+}
+
+export function makeGangway(): GangwayView {
+  const group = new THREE.Group();
+  const tilt = new THREE.Group();
+  group.add(tilt);
+  const planks: THREE.Mesh[] = [];
+  for (let i = 0; i < 12; i++) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.72), mat(i % 2 ? WOOD.mid : WOOD.light));
+    p.castShadow = true;
+    p.receiveShadow = true;
+    tilt.add(p);
+    planks.push(p);
+  }
+  const beams = [-1, 1].map((sz) => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(1, 0.08, 0.06), mat(WOOD.dark));
+    b.position.z = sz * 0.38;
+    tilt.add(b);
+    return b;
+  });
+  const ropes = [-1, 1].map((sz) => {
+    const r = new THREE.Mesh(new THREE.BoxGeometry(1, 0.03, 0.03), mat(0xc9a27a));
+    r.position.z = sz * 0.38;
+    tilt.add(r);
+    return r;
+  });
+  const posts = [-1, 1].flatMap((sz) => [0, 1].map((end) => {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.6, 0.05), mat(WOOD.dark));
+    p.userData['end'] = end;
+    p.position.z = sz * 0.38;
+    tilt.add(p);
+    return p;
+  }));
+  return {
+    group,
+    set(run, drop, extend) {
+      const L = Math.hypot(run, drop) * Math.max(0, Math.min(1, extend));
+      group.visible = extend > 0.01;
+      tilt.rotation.z = -Math.atan2(drop, run);
+      const n = Math.max(1, Math.round(L / 0.24));
+      planks.forEach((p, i) => {
+        p.visible = i < n;
+        p.position.set(0.12 + (i * (L - 0.12)) / Math.max(1, n - 1), 0, 0);
+        if (i >= n) p.position.x = 0;
+      });
+      for (const b of beams) {
+        b.scale.x = Math.max(0.01, L);
+        b.position.set(L / 2, -0.04, b.position.z);
+      }
+      for (const r of ropes) {
+        r.scale.x = Math.max(0.01, L);
+        r.position.set(L / 2, 0.55, r.position.z);
+      }
+      for (const p of posts) {
+        p.position.x = p.userData['end'] ? Math.max(0.03, L - 0.03) : 0.03;
+        p.position.y = 0.28;
+        p.rotation.z = Math.atan2(drop, run);
+      }
     },
   };
 }

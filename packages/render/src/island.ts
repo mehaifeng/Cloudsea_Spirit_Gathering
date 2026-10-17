@@ -1,4 +1,5 @@
 import { fbm, hash2, WATER_LEVEL, type Terrain } from '@cloudsea/sim';
+import { bedColor, foamMaterial, waterMaterial } from './water';
 import * as THREE from 'three';
 import { mulberry } from './util';
 
@@ -62,7 +63,7 @@ export function buildIslandMesh(terrain: Terrain, o: IslandMeshOptions = {}): TH
     const rr = Math.hypot(x, z) / terrain.rim(Math.atan2(z, x));
     if (rr > 0.86) return c.setHSL(0.09, 0.32, 0.5 + (n - 0.5) * 0.08); // 岛缘露出泥土
     // 水底与岸边沙地
-    if (y < WATER_LEVEL + 0.05) return c.setHSL(0.1, 0.25, 0.42 + (n - 0.5) * 0.06);
+    if (y < WATER_LEVEL + 0.05) return bedColor(c, WATER_LEVEL - y, n);
     if (terrain.waterDistance(x, z) < 1.1) return c.setHSL(0.11, 0.38, 0.72 + (n - 0.5) * 0.06);
     // 陡坡露出岩石
     ab.set(b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!);
@@ -166,28 +167,46 @@ export function buildIslandMesh(terrain: Terrain, o: IslandMeshOptions = {}): TH
   return group;
 }
 
-/** 池塘与溪流的水面（半透明、微微发光）。 */
-export const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x8fc7e0, emissive: 0x3c7a96, emissiveIntensity: 0.12, roughness: 0.15, metalness: 0, transparent: true, opacity: 0.82, flatShading: true });
 
 function buildWater(terrain: Terrain): THREE.Object3D | null {
   const { ponds = [], streams = [] } = terrain.params;
   if (ponds.length === 0 && streams.length === 0) return null;
   const g = new THREE.Group();
   for (const p of ponds) {
-    const m = new THREE.Mesh(new THREE.CircleGeometry(p.radius * 1.12, 20).rotateX(-Math.PI / 2), waterMaterial);
+    // 细分的圆面（几圈同心环），顶点着色器里起伏
+    const m = new THREE.Mesh(new THREE.RingGeometry(0.001, p.radius * 1.12, 28, 6).rotateX(-Math.PI / 2), waterMaterial);
     m.position.set(p.x, WATER_LEVEL, p.z);
     m.receiveShadow = true;
+    m.renderOrder = 2;
     g.add(m);
+    // 岸边泡沫：岸线附近一圈（岸外的部分被地形挡住）
+    const foam = new THREE.Mesh(new THREE.RingGeometry(p.radius * 0.86, p.radius * 1.05, 36, 1).rotateX(-Math.PI / 2), foamMaterial);
+    foam.position.set(p.x, WATER_LEVEL + 0.012, p.z);
+    foam.renderOrder = 3;
+    g.add(foam);
   }
   for (const s of streams) {
     for (let i = 0; i < s.points.length - 1; i++) {
       const a = s.points[i]!;
       const b = s.points[i + 1]!;
       const len = Math.hypot(b.x - a.x, b.z - a.z);
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(s.width * 1.15, len + s.width).rotateX(-Math.PI / 2), waterMaterial);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(s.width * 1.15, len + s.width, 4, Math.max(2, Math.round(len))).rotateX(-Math.PI / 2), waterMaterial);
       m.position.set((a.x + b.x) / 2, WATER_LEVEL, (a.z + b.z) / 2);
       m.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
+      m.renderOrder = 2;
       g.add(m);
+      // 两岸泡沫
+      for (const side of [-1, 1]) {
+        const f = new THREE.Mesh(new THREE.PlaneGeometry(0.35, len + s.width * 0.6).rotateX(-Math.PI / 2), foamMaterial);
+        f.position.set(0, 0.012, 0);
+        f.position.x = (side * s.width * 0.5);
+        const holder = new THREE.Group();
+        holder.position.set((a.x + b.x) / 2, WATER_LEVEL, (a.z + b.z) / 2);
+        holder.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
+        holder.add(f);
+        f.renderOrder = 3;
+        g.add(holder);
+      }
     }
   }
   return g;

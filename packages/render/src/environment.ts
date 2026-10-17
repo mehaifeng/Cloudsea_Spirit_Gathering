@@ -1,6 +1,7 @@
 import type { Element } from '@cloudsea/content';
 import { createTerrain } from '@cloudsea/sim';
 import * as THREE from 'three';
+import { waterUniforms } from './water';
 import { buildIslandMesh } from './island';
 import { makeTree } from './props';
 import { C, canvasTexture, lerp, mulberry } from './util';
@@ -215,6 +216,7 @@ export class Environment {
   }
 
   update(dt: number, t: number, camera: THREE.Camera, focus: THREE.Vector3): void {
+    waterUniforms.uTime.value = t;
     const n = this.night;
     const mix = (out: THREE.Color, a: number, b: number) => out.set(a).lerp(C(b), n);
     mix(this.skyU.uTop.value, DAY.top, NIGHT.top);
