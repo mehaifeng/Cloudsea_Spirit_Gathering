@@ -138,6 +138,51 @@ export function placementBlocker(
   return null;
 }
 
+/**
+ * 存档迁移用：把重叠、出界或落进水里的建筑挪到附近的空位（按螺旋向外找）。
+ * 岛核与码头不动。返回被挪动的建筑 id。
+ */
+export function relocateBuildings(content: ContentDb, home: HomeIsland): string[] {
+  const terrain = homeTerrain(home.seed, home.coreLevel);
+  const occupied = new Set<string>();
+  const moved: string[] = [];
+  const fits = (b: Pick<BuildingInstance, 'type' | 'x' | 'z' | 'rot'>): boolean =>
+    cellsOf(content.buildings.get(b.type)!, b).every(
+      ([cx, cz]) => !occupied.has(`${cx},${cz}`) && terrain.inside(cx + 0.5, cz + 0.5, 0.6) && !terrain.isWater(cx + 0.5, cz + 0.5),
+    );
+  const claim = (b: Pick<BuildingInstance, 'type' | 'x' | 'z' | 'rot'>) => {
+    for (const [cx, cz] of cellsOf(content.buildings.get(b.type)!, b)) occupied.add(`${cx},${cz}`);
+  };
+  const list = Object.values(home.buildings).sort((a, b) => {
+    const fixed = (x: BuildingInstance) => (['core', 'dock'].includes(content.buildings.get(x.type)!.kind) ? 0 : 1);
+    return fixed(a) - fixed(b);
+  });
+  for (const b of list) {
+    const kind = content.buildings.get(b.type)!.kind;
+    if (kind === 'core' || kind === 'dock' || fits(b)) {
+      claim(b);
+      continue;
+    }
+    let placed = false;
+    for (let r = 1; r < 40 && !placed; r++) {
+      for (let dx = -r; dx <= r && !placed; dx++) {
+        for (let dz = -r; dz <= r && !placed; dz++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+          const cand = { ...b, x: b.x + dx, z: b.z + dz };
+          if (fits(cand)) {
+            home.buildings[b.id] = { ...b, x: cand.x, z: cand.z };
+            claim(cand);
+            moved.push(b.id);
+            placed = true;
+          }
+        }
+      }
+    }
+    if (!placed) claim(b);
+  }
+  return moved;
+}
+
 export function newBuilding(id: string, type: string, x: number, z: number, rot: Rotation): BuildingInstance {
   return { id, type, x, z, rot, built: false, buildProgress: 0, workers: [], crop: null, job: null, eggId: null, occupants: [] };
 }

@@ -1,10 +1,13 @@
-import type { CharacterState, WorldState } from './state';
+import { getContent } from '@cloudsea/content';
+import { relocateBuildings } from './home';
+import { HOME_DOCK } from './layout';
+import type { CharacterState, PlayerRuntime, WorldState } from './state';
 
 /**
  * 存档（铁律 7、DESIGN 9.3 / 9.4）：世界存档与角色存档分开，都带 version。
  * 结构变更时：版本号 +1，在 MIGRATIONS 里加一条从旧版本升级的函数，并补测试。
  */
-export const WORLD_SAVE_VERSION = 1;
+export const WORLD_SAVE_VERSION = 2;
 export const CHARACTER_SAVE_VERSION = 2;
 
 export interface WorldSaveFile {
@@ -23,7 +26,30 @@ export interface CharacterSaveFile {
 type Migration = (data: Record<string, unknown>) => Record<string, unknown>;
 
 /** 版本 n → n+1 的迁移函数。键是旧版本号。 */
-export const WORLD_MIGRATIONS: Readonly<Record<number, Migration>> = {};
+export const WORLD_MIGRATIONS: Readonly<Record<number, Migration>> = {
+  /**
+   * v1 → v2（DESIGN v0.5）：家园岛从 15 米扩到 24 米、建筑占地按尺度规范变大、新增云舟航行。
+   * 码头挪到新的岛缘；因为变大而重叠或出界的建筑挪到附近空位；玩家加上 voyage 字段。
+   */
+  1: (data) => {
+    const content = getContent();
+    const w = JSON.parse(JSON.stringify(data['world'])) as Omit<WorldState, 'characters' | 'battles'>;
+    for (const [id, p] of Object.entries(w.players)) {
+      (p as PlayerRuntime).voyage = null;
+      if (p.islandId === `home:${id}`) {
+        p.x = HOME_DOCK.x;
+        p.z = HOME_DOCK.z - 2.5;
+      }
+    }
+    for (const home of Object.values(w.homes)) {
+      for (const b of Object.values(home.buildings)) {
+        if (b.type === 'dock') home.buildings[b.id] = { ...b, x: HOME_DOCK.x - 2, z: HOME_DOCK.z - 1 };
+      }
+      relocateBuildings(content, home);
+    }
+    return { ...data, world: w };
+  },
+};
 export const CHARACTER_MIGRATIONS: Readonly<Record<number, Migration>> = {
   /** v1 → v2（DESIGN v0.5）：工具“风帆”改为“云舟”；新增看过的播片列表（已完成引导的角色视为看过开场）。 */
   1: (data) => {

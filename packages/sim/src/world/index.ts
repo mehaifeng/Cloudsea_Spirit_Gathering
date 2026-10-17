@@ -12,5 +12,6 @@ export * from './state';
 export * from './terrain';
 export * from './tick';
 export * from './time';
+export * from './voyage';
 export * from './weather';
 export * from './wild';

@@ -46,6 +46,8 @@ export interface PlayerRuntime {
   z: number;
   yaw: number;
   battleId: string | null;
+  /** 正在航行（v0.5）：出发岛、目的岛、出发与抵达 tick。 */
+  voyage: { readonly from: string; readonly to: string; readonly departTick: number; arriveTick: number } | null;
 }
 
 export type Rotation = 0 | 1 | 2 | 3;

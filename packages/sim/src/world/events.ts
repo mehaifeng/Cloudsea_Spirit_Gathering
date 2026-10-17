@@ -11,6 +11,7 @@ export type WorldEvent =
   | { readonly t: 'shells'; readonly playerId: string; readonly delta: number }
   | { readonly t: 'dayStart'; readonly day: number }
   | { readonly t: 'sailed'; readonly playerId: string; readonly islandId: string }
+  | { readonly t: 'voyageStart'; readonly playerId: string; readonly from: string; readonly to: string; readonly departTick: number; readonly arriveTick: number }
   | { readonly t: 'battleStart'; readonly playerId: string; readonly battleId: string }
   | { readonly t: 'battleTurn'; readonly playerId: string; readonly battleId: string; readonly events: readonly BattleEvent[] }
   | {

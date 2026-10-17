@@ -23,6 +23,8 @@ function newGame(seed = 7): WorldState {
 function act(world: WorldState, intent: Intent) {
   const r = applyIntent(content, world, 'p1', intent);
   if (!r.ok) throw new Error(`${intent.type}: ${r.error}`);
+  // 出航是一段实时航行：测试里直接飞到目的地
+  if (intent.type === 'sail') while (world.players['p1']!.voyage) advanceWorld(content, world, 10);
   return r;
 }
 
@@ -47,6 +49,46 @@ describe('时间与天气', () => {
     for (let i = 0; i < N; i++) if (weatherAt(3, 'sunPlains', i * 3001) === 'sun') sun++;
     expect(sun / N).toBeGreaterThan(0.4);
     expect(sun / N).toBeLessThan(0.6);
+  });
+});
+
+describe('云舟航行（v0.5）', () => {
+  it('出航后处于航行中，5–20 秒后由房主结算抵达；航行中不能做别的事', () => {
+    const w = newGame();
+    const r = applyIntent(content, w, 'p1', { type: 'sail', islandId: 'wheatSlope' });
+    expect(r.ok).toBe(true);
+    const v = w.players['p1']!.voyage!;
+    expect(v.to).toBe('wheatSlope');
+    const seconds = (v.arriveTick - v.departTick) / 10;
+    expect(seconds).toBeGreaterThanOrEqual(5);
+    expect(seconds).toBeLessThanOrEqual(20);
+    expect(w.players['p1']!.islandId).toBe(homeIslandId('p1'));
+    expect(applyIntent(content, w, 'p1', { type: 'gather', nodeId: 'x' }).error).toBe('正在航行中');
+    const events = run(w, v.arriveTick - v.departTick + 10);
+    expect(events.some((e) => e.t === 'sailed')).toBe(true);
+    expect(w.players['p1']!.islandId).toBe('wheatSlope');
+    expect(w.players['p1']!.voyage).toBeNull();
+  });
+
+  it('加速：剩余时间缩到约 2 秒；云舟等级越高，远航越快', () => {
+    const w = newGame();
+    w.characters['p1']!.backpack['lanternFuel'] = 5;
+    w.characters['p1']!.tools.lantern = 2;
+    applyIntent(content, w, 'p1', { type: 'sail', islandId: 'mistHollow' });
+    const v = w.players['p1']!.voyage!;
+    const far = v.arriveTick - v.departTick;
+    expect(far).toBe(200); // 远岛封顶 20 秒
+    act(w, { type: 'hurryVoyage' });
+    expect(w.players['p1']!.voyage!.arriveTick).toBe(w.tick + 20);
+    const w2 = newGame();
+    w2.characters['p1']!.tools.skiff = 5;
+    applyIntent(content, w2, 'p1', { type: 'sail', islandId: 'wheatSlope' });
+    const v2 = w2.players['p1']!.voyage!;
+    const w3 = newGame();
+    applyIntent(content, w3, 'p1', { type: 'sail', islandId: 'wheatSlope' });
+    const v3 = w3.players['p1']!.voyage!;
+    expect(v2.arriveTick - v2.departTick).toBeLessThan(v3.arriveTick - v3.departTick);
+    expect(far).toBeGreaterThan(v3.arriveTick - v3.departTick);
   });
 });
 
@@ -426,7 +468,7 @@ describe('存档', () => {
     act(a, { type: 'adoptStarter' });
     run(a, 5000);
     const saved = saveWorld(a);
-    expect(saved.world.version).toBe(1);
+    expect(saved.world.version).toBe(2);
     expect(saved.characters).toHaveLength(1);
     const json = JSON.parse(JSON.stringify(saved));
     const b = loadWorld(json.world);
@@ -434,6 +476,27 @@ describe('存档', () => {
     run(a, 8000);
     run(b, 8000);
     expect(b).toEqual(a);
+  });
+
+  it('世界存档 v1 → v2：码头挪到新岛缘，变大后重叠的建筑挪到空位，玩家加上航行字段', () => {
+    const w = newGame(5);
+    const saved = saveWorld(w);
+    const v1 = JSON.parse(JSON.stringify(saved.world));
+    v1.version = 1;
+    delete v1.world.players.p1.voyage;
+    const home = v1.world.homes.p1;
+    home.buildings['dock:p1'].x = -1;
+    home.buildings['dock:p1'].z = 9.5;
+    // 两座旧版 2×2 的栖巢挨着放，按新的 3×3 会重叠
+    home.buildings.a = { id: 'a', type: 'nest', x: 3, z: -6, rot: 0, built: true, buildProgress: 600, workers: [], crop: null, job: null, eggId: null, occupants: [] };
+    home.buildings.b = { id: 'b', type: 'nest', x: 5, z: -6, rot: 0, built: true, buildProgress: 600, workers: [], crop: null, job: null, eggId: null, occupants: [] };
+    const loaded = loadWorld(v1);
+    expect(loaded.players['p1']!.voyage).toBeNull();
+    expect(loaded.homes['p1']!.buildings['dock:p1']).toMatchObject({ x: -2, z: 15 });
+    const a = loaded.homes['p1']!.buildings['a']!;
+    const b = loaded.homes['p1']!.buildings['b']!;
+    const overlap = Math.abs(a.x - b.x) < 3 && Math.abs(a.z - b.z) < 3;
+    expect(overlap).toBe(false);
   });
 
   it('拒绝更新版本与损坏的存档；迁移链按版本逐级执行', () => {

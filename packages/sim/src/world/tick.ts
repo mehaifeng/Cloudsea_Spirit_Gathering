@@ -8,6 +8,7 @@ import { newId } from './ids';
 import { planKeeperDay } from './keeper';
 import type { CharacterState, Order, WorldState } from './state';
 import { dayOf } from './time';
+import { tickVoyages } from './voyage';
 import { refreshWild, WILD_REFRESH_TICKS } from './wild';
 
 /** 生成当天的商队订单（DESIGN 6.3 / 6.6：每日 3–5 条，50–400 云贝）。 */
@@ -86,6 +87,7 @@ export function advanceWorld(content: ContentDb, world: WorldState, dt: number):
   const day = dayOf(world.tick);
   if (day !== world.lastDailyDay) dailyUpdate(content, world, day, events);
 
+  tickVoyages(content, world, events);
   for (const home of Object.values(world.homes)) tickHome(content, world, home, dt, events);
   for (const c of Object.values(world.characters)) tickSpirits(content, world, c, dt, events);
 

@@ -109,7 +109,7 @@ export function joinWorld(world: WorldState, character: CharacterState): void {
   world.characters[character.id] = character;
   if (!world.homes[character.id]) world.homes[character.id] = createHome(character.id, deriveSeed(world.seed, `home:${character.id}`));
   if (!world.players[character.id]) {
-    world.players[character.id] = { islandId: homeIslandId(character.id), x: HOME_DOCK.x, z: HOME_DOCK.z - 2.5, yaw: Math.PI, battleId: null };
+    world.players[character.id] = { islandId: homeIslandId(character.id), x: HOME_DOCK.x, z: HOME_DOCK.z - 2.5, yaw: Math.PI, battleId: null, voyage: null };
   }
 }
 

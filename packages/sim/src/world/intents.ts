@@ -33,14 +33,18 @@ import { addItems, canPay, payFrom, removeItems } from './inventory';
 import { AFFINITY, changeAffinity, giftKeeper, talkToKeeper } from './keeper';
 import { arrivalPoint, gatherNodes, HOME_DOCK } from './layout';
 import type { CharacterState, PlayerRuntime, Rotation, WorldState } from './state';
-import { clockAt, dayOf, TICKS_PER_DAY } from './time';
+import { clockAt, dayOf, TICKS_PER_DAY, TICKS_PER_SECOND } from './time';
+import { VOYAGE_HURRY_REMAIN, voyageTicks } from './voyage';
 import { weatherAt } from './weather';
 import { refreshWild } from './wild';
 
 /** 客户端发给房主的意图（铁律 4）。房主校验后执行，不合法就拒绝。 */
 export type Intent =
   | { readonly type: 'move'; readonly x: number; readonly z: number; readonly yaw: number }
+  /** 出航（v0.5：开始一段实时航行，抵达由房主按 tick 结算）。 */
   | { readonly type: 'sail'; readonly islandId: string }
+  /** 航行中加速：剩余时间缩到约 2 秒。 */
+  | { readonly type: 'hurryVoyage' }
   | { readonly type: 'gather'; readonly nodeId: string }
   | { readonly type: 'encounter'; readonly wildId: string }
   | { readonly type: 'battleActions'; readonly battleId: string; readonly actions: SideActions }
@@ -118,6 +122,8 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
   const ok = (): IntentResult => ({ ok: true, events });
   const home = world.homes[playerId]!;
   const inBattle = p.battleId !== null;
+  // 航行中只能做与航行无关的少数几件事
+  if (p.voyage && !['pause', 'tutorial', 'seenCutscene', 'hurryVoyage'].includes(intent.type)) return fail('正在航行中');
   const spirit = (id: string) => c.spirits[id];
 
   switch (intent.type) {
@@ -137,27 +143,25 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
 
     case 'sail': {
       if (inBattle) return fail('战斗中不能出航');
-      if (intent.islandId === 'home' || intent.islandId === homeIslandId(playerId)) {
-        p.islandId = homeIslandId(playerId);
-        p.x = HOME_DOCK.x;
-        p.z = HOME_DOCK.z - 2.5;
-        p.yaw = Math.PI;
-        events.push({ t: 'sailed', playerId, islandId: p.islandId });
-        return ok();
+      const to = intent.islandId === 'home' ? homeIslandId(playerId) : intent.islandId;
+      if (to === p.islandId) return fail('已经在这座岛上了');
+      if (to !== homeIslandId(playerId)) {
+        const island = content.islands.get(to);
+        if (!island) return fail('没有这座岛');
+        if (c.tools.skiff < island.skiffLevel) return fail(`需要 ${island.skiffLevel} 级云舟`);
+        if (c.tools.lantern < island.fogLevel) return fail(`雾太浓了，需要 ${island.fogLevel} 级提灯`);
+        if (island.fogLevel > 0 && (c.backpack['lanternFuel'] ?? 0) < island.fogLevel) return fail(`提灯燃料不够（需要 ${island.fogLevel}）`);
+        if (island.fogLevel > 0) removeItems(c.backpack, 'lanternFuel', island.fogLevel);
       }
-      const island = content.islands.get(intent.islandId);
-      if (!island) return fail('没有这座岛');
-      if (c.tools.skiff < island.skiffLevel) return fail(`需要 ${island.skiffLevel} 级云舟`);
-      if (c.tools.lantern < island.fogLevel) return fail(`雾太浓了，需要 ${island.fogLevel} 级提灯`);
-      if (island.fogLevel > 0 && (c.backpack['lanternFuel'] ?? 0) < island.fogLevel) return fail(`提灯燃料不够（需要 ${island.fogLevel}）`);
-      if (island.fogLevel > 0) removeItems(c.backpack, 'lanternFuel', island.fogLevel);
-      const a = arrivalPoint(island);
-      p.islandId = island.id;
-      p.x = a.x;
-      p.z = a.z;
-      p.yaw = Math.PI;
-      if (island.kind === 'fixed') refreshWild(content, world, island);
-      events.push({ t: 'sailed', playerId, islandId: island.id });
+      const ticks = voyageTicks(content, p.islandId, to, c.tools.skiff);
+      p.voyage = { from: p.islandId, to, departTick: world.tick, arriveTick: world.tick + ticks };
+      events.push({ t: 'voyageStart', playerId, from: p.islandId, to, departTick: world.tick, arriveTick: world.tick + ticks });
+      return ok();
+    }
+
+    case 'hurryVoyage': {
+      if (!p.voyage) return fail('没有在航行');
+      p.voyage.arriveTick = Math.min(p.voyage.arriveTick, world.tick + VOYAGE_HURRY_REMAIN * TICKS_PER_SECOND);
       return ok();
     }
 
