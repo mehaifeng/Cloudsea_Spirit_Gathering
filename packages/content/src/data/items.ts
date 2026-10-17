@@ -22,8 +22,8 @@ export const ITEMS: readonly ItemInput[] = [
   { id: 'brick', name: '石砖', category: 'processed', sellPrice: 11, description: '烧制好的云石砖。' },
   { id: 'copperIngot', name: '铜锭', category: 'processed', sellPrice: 22, element: 'thunder', description: '熔炼过的雷铜。' },
   // ---------- 食物 ----------
-  { id: 'riceBall', name: '絮灵饭团', category: 'food', sellPrice: 24, food: { curesWeary: false }, description: '絮灵最爱的点心，繁殖时需要。' },
-  { id: 'warmBun', name: '暖心包', category: 'food', sellPrice: 20, buyPrice: 45, food: { curesWeary: true }, description: '热乎乎的包子，吃了立刻消除疲惫。码头的商队有卖，也能在工坊烤。' },
+  { id: 'riceBall', name: '絮灵饭团', category: 'food', sellPrice: 24, food: { heal: 0 }, description: '絮灵最爱的点心，繁殖时需要。' },
+  { id: 'warmBun', name: '暖心包', category: 'food', sellPrice: 20, buyPrice: 45, food: { heal: 1 }, description: '热乎乎的包子，吃了立刻回满生命、解除所有异常。码头商队有卖。' },
   // ---------- 燃料与灯露 ----------
   { id: 'lanternFuel', name: '提灯燃料', category: 'fuel', sellPrice: 12, buyPrice: 30, description: '进入有雾的岛时消耗。' },
   { id: 'lanternDew', name: '灯露', category: 'dew', sellPrice: 10, buyPrice: 30, dewQuality: 'normal', description: '用来安抚野生絮灵、邀请它加入。' },

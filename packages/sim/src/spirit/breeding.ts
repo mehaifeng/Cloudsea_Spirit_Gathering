@@ -32,7 +32,6 @@ export function breedBlocker(content: ContentDb, a: Spirit, b: Spirit, now: numb
   for (const s of [a, b]) {
     const name = s.nickname ?? formOf(content, s).form.name;
     if (s.foreign) return `${name} 是外来絮灵，不能繁殖`;
-    if (s.weary) return `${name} 正在疲惫，不能繁殖`;
     if (s.state === 'egg' || s.state === 'purifying') return `${name} 现在不能繁殖`;
     if (s.breedReadyTick > now) return `${name} 还在繁殖冷却中`;
   }

@@ -1,5 +1,6 @@
 import { ECONOMY, ORDER_PREMIUM, ORDER_TEMPLATES, type ContentDb } from '@cloudsea/content';
 import { createRng, deriveSeed } from '../rng';
+import { healSpirit, maxHpOf } from '../spirit/condition';
 import type { Spirit } from '../spirit/types';
 import type { WorldEvent } from './events';
 import { homeIslandId } from './create';
@@ -34,28 +35,36 @@ function dailyUpdate(content: ContentDb, world: WorldState, day: number, events:
   for (const k of Object.values(world.keepers)) planKeeperDay(content, world, k, events);
 }
 
+/** 核心塔附近快速恢复的半径（米）与回满所需 tick；家园岛其他地方回满所需 tick（DESIGN 4.8，v0.7）。 */
+export const CORE_HEAL = { radius: 6, fullTicks: 100 } as const;
+export const HOME_HEAL_FULL_TICKS = 1500;
+
 /**
- * 疲惫恢复倍速（DESIGN 4.8）：在家园岛上休息时，有温泉 4×、有栖巢 2×；出门在外 1×。
- * “在家”= 空闲的絮灵，或主人此刻就在家园岛上时队伍里的絮灵（D52）；工作中的絮灵按自然速度。
+ * 生命恢复速度（每 tick 恢复最大生命的比例；DESIGN 4.8，v0.7）：
+ * 主人在家园岛核心塔附近时，队伍里的絮灵快速恢复；家园岛上（空闲、工作中，或主人在家时的队伍）缓慢恢复，
+ * 有温泉 ×4、有栖巢 ×2；野外不恢复。
  */
-function recoveryRate(content: ContentDb, world: WorldState, c: CharacterState, s: Spirit): number {
-  if (s.state === 'egg' || s.state === 'purifying' || s.state === 'working') return 1;
-  const atHome = s.state === 'idle' || world.players[c.id]?.islandId === homeIslandId(c.id);
+export function healRate(content: ContentDb, world: WorldState, c: CharacterState, s: Spirit): number {
+  if (s.state === 'egg' || s.state === 'purifying') return 0;
+  const p = world.players[c.id];
+  const playerHome = p?.islandId === homeIslandId(c.id) && !p.voyage;
+  if (s.state === 'party' && !playerHome) return 0;
+  if (s.state === 'party' && p && Math.hypot(p.x, p.z) <= CORE_HEAL.radius && !p.battleId) return 1 / CORE_HEAL.fullTicks;
   const home = world.homes[c.id];
-  if (!atHome || !home) return 1;
-  const kinds = new Set(Object.values(home.buildings).filter((b) => b.built).map((b) => content.buildings.get(b.type)!.kind));
-  if (kinds.has('hotSpring')) return 4;
-  if (kinds.has('nest')) return 2;
-  return 1;
+  const kinds = new Set(Object.values(home?.buildings ?? {}).filter((b) => b.built).map((b) => content.buildings.get(b.type)!.kind));
+  const mult = kinds.has('hotSpring') ? 4 : kinds.has('nest') ? 2 : 1;
+  return mult / HOME_HEAL_FULL_TICKS;
 }
 
 function tickSpirits(content: ContentDb, world: WorldState, c: CharacterState, dt: number, events: WorldEvent[]): void {
   for (const s of Object.values(c.spirits)) {
     let next = s;
-    if (s.weary) {
-      const remaining = s.wearyRemaining - dt * recoveryRate(content, world, c, s);
-      next = remaining <= 0 ? { ...next, weary: false, wearyRemaining: 0 } : { ...next, wearyRemaining: remaining };
-      if (remaining <= 0) events.push({ t: 'recovered', playerId: c.id, spiritId: s.id });
+    if (s.condition) {
+      const rate = healRate(content, world, c, s);
+      if (rate > 0) {
+        next = healSpirit(content, s, rate * dt * maxHpOf(content, s));
+        if (!next.condition) events.push({ t: 'recovered', playerId: c.id, spiritId: s.id });
+      }
     }
     if (s.state === 'egg' && world.tick >= s.readyAtTick && hasRoomForSpirit(content, world, c)) {
       next = { ...next, state: 'idle' };

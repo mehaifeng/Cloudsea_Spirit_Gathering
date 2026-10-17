@@ -1,4 +1,4 @@
-import type { Element, PartSlot, Stat } from '@cloudsea/content';
+import type { Ailment, Element, PartSlot, Stat, StageStat } from '@cloudsea/content';
 
 export type Sex = 'male' | 'female';
 export type Pattern = 'plain' | 'spots' | 'stripes';
@@ -31,7 +31,18 @@ export interface Genes {
   readonly shiny: boolean;
 }
 
-/** 絮灵所处的状态（DESIGN 4.8）。疲惫是单独的标记，可与空闲 / 工作 / 队伍并存（决策 15）。 */
+/**
+ * 伤势（DESIGN 4.8，v0.7 取代疲惫）：战斗结束时的生命、增减益层数（含限时层数，turnsLeft 为还剩几回合）、
+ * 状态异常，带进下一场战斗；生命回满时整体清除（null = 完好）。
+ */
+export interface SpiritCondition {
+  readonly hp: number;
+  readonly stages: Readonly<Partial<Record<StageStat, number>>>;
+  readonly timedStages: readonly { readonly stat: StageStat; readonly delta: number; readonly turnsLeft: number }[];
+  readonly ailment: { readonly id: Ailment; readonly turnsLeft: number } | null;
+}
+
+/** 絮灵所处的状态（DESIGN 4.8）。 */
 export type SpiritState = 'idle' | 'working' | 'party' | 'purifying' | 'egg';
 
 export interface Spirit {
@@ -48,9 +59,8 @@ export interface Spirit {
   /** 通过技能书学会的技能。 */
   readonly learnedSkills: readonly string[];
   readonly state: SpiritState;
-  readonly weary: boolean;
-  /** 疲惫还需休息的 tick（按地点倍速扣减：自然 1×、栖巢 2×、温泉 4×，DESIGN 4.8）。 */
-  readonly wearyRemaining: number;
+  /** 伤势；null = 完好（DESIGN 4.8，v0.7）。 */
+  readonly condition: SpiritCondition | null;
   /** 通过絮灵码导入（DESIGN 10）。 */
   readonly foreign: boolean;
   /** 蚀化：捕获后需要净化。 */

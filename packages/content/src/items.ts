@@ -14,8 +14,8 @@ export const itemSchema = z
     sellPrice: z.int().min(0),
     /** 商队售价；省略 = 商队不卖。 */
     buyPrice: z.int().min(1).optional(),
-    /** 食物：可用于繁殖，部分能立即消除疲惫。 */
-    food: z.strictObject({ curesWeary: z.boolean() }).optional(),
+    /** 食物：可用于繁殖；heal = 立即恢复最大生命的比例（回满时同时清除增减益与状态异常，DESIGN 4.8）。 */
+    food: z.strictObject({ heal: z.number().min(0).max(1) }).optional(),
     /** 灯露品质。 */
     dewQuality: z.enum(['normal', 'refined', 'superior']).optional(),
     /** 技能书教的技能。 */

@@ -7,9 +7,11 @@ import { createCharacter, createWorld, homeIslandId, joinWorld } from './create'
 import { applyIntent, type Intent } from './intents';
 import { gatherNodes } from './layout';
 import { sailBlocked } from './voyage';
-import { loadCharacter, loadWorld, saveWorld, SaveError, __migrate } from './save';
+import { loadCharacter, loadWorld, saveWorld, SaveError, WORLD_SAVE_VERSION, __migrate } from './save';
 import type { WorldState } from './state';
-import { advanceWorld } from './tick';
+import { advanceWorld, CORE_HEAL, HOME_HEAL_FULL_TICKS } from './tick';
+import { battleReady, TUTORIAL_FOE_HP } from './battleflow';
+import { isDowned, maxHpOf } from '../spirit/condition';
 import { clockAt, TICKS_PER_DAY } from './time';
 import { weatherAt } from './weather';
 
@@ -290,7 +292,7 @@ describe('战斗与捕获', () => {
     expect(done).toBe(true);
   });
 
-  it('战败：参战絮灵疲惫；全员疲惫时被商队送回家', () => {
+  it('战败（v0.7）：没有疲惫，倒下的生命为 0 不能再出战；全员倒下时被商队送回家', () => {
     const { w, wild } = toIslandWithWild();
     const c = w.characters['p1']!;
     c.spirits[c.party[0]!] = { ...c.spirits[c.party[0]!]!, level: 1 };
@@ -303,37 +305,71 @@ describe('战斗与捕获', () => {
       end = act(w, { type: 'battleActions', battleId, actions: defaultActions(b.state, 0, false) }).events.find((e) => e.t === 'battleEnd');
     }
     expect(end).toMatchObject({ result: 'lose', rescued: true });
-    expect(c.spirits[c.party[0]!]!.weary).toBe(true);
+    const s = c.spirits[c.party[0]!]!;
+    expect(s.condition?.hp).toBe(0);
+    expect(isDowned(content, s)).toBe(true);
+    expect(battleReady(content, c)).toEqual([]);
     expect(w.players['p1']!.islandId).toBe(homeIslandId('p1'));
   });
 
-  it('疲惫一天后自然恢复；暖心包立刻恢复', () => {
-    const w = newGame();
-    act(w, { type: 'adoptStarter' });
+  it('伤势延续（v0.7）：生命、层数、异常带进下一场；对手每场满状态', () => {
+    const { w, wild } = toIslandWithWild();
     const c = w.characters['p1']!;
     const id = c.party[0]!;
-    c.spirits[id] = { ...c.spirits[id]!, weary: true, wearyRemaining: TICKS_PER_DAY };
-    run(w, TICKS_PER_DAY / 2);
-    expect(c.spirits[id]!.weary).toBe(true);
-    c.backpack['warmBun'] = 1;
-    act(w, { type: 'feed', spiritId: id, item: 'warmBun' });
-    expect(c.spirits[id]!.weary).toBe(false);
+    const max = maxHpOf(content, c.spirits[id]!);
+    c.spirits[id] = { ...c.spirits[id]!, condition: { hp: 7, stages: { power: 2 }, timedStages: [], ailment: { id: 'soaked', turnsLeft: 2 } } };
+    act(w, { type: 'encounter', wildId: wild.id });
+    const b = w.battles[w.players['p1']!.battleId!]!;
+    const me = b.state.sides[0].units[0]!;
+    expect(me.hp).toBe(7);
+    expect(me.maxHp).toBe(max);
+    expect(me.stages.power).toBe(2);
+    expect(me.ailment).toEqual({ id: 'soaked', turnsLeft: 2 });
+    for (const u of b.state.sides[1].units) expect(u.hp).toBe(u.maxHp);
+    // 逃跑没有惩罚，伤势照旧带出来
+    act(w, { type: 'battleActions', battleId: b.id, actions: { 0: { type: 'flee' } } });
+    if (!w.players['p1']!.battleId) expect(c.spirits[id]!.condition?.hp).toBeLessThanOrEqual(7);
   });
 
-  it('Lynx 反馈：队伍里疲惫的絮灵回到家园岛就按栖巢倍速恢复；出门在外是自然速度', () => {
+  it('恢复（v0.7）：核心塔附近约 10 秒回满并清除状态；家园岛其他地方慢；野外不恢复；暖心包立刻回满', () => {
     const w = newGame();
     act(w, { type: 'adoptStarter' });
     const c = w.characters['p1']!;
     const id = c.party[0]!;
-    // 先建好一座栖巢
-    w.homes['p1']!.buildings['n1'] = { id: 'n1', type: 'nest', x: 3, z: -5, rot: 0, built: true, buildProgress: 600, workers: [], crop: null, job: null, eggId: null, occupants: [] };
-    c.spirits[id] = { ...c.spirits[id]!, weary: true, wearyRemaining: TICKS_PER_DAY };
-    run(w, TICKS_PER_DAY / 2 + 20);
-    expect(c.spirits[id]!.weary).toBe(false);
+    const hurt = { hp: 1, stages: { guard: -1 }, timedStages: [], ailment: { id: 'dazzled' as const, turnsLeft: 1 } };
+    // 核心塔附近
+    act(w, { type: 'move', x: 1, z: 2, yaw: 0 });
+    c.spirits[id] = { ...c.spirits[id]!, condition: hurt };
+    run(w, CORE_HEAL.fullTicks + 5);
+    expect(c.spirits[id]!.condition).toBeNull();
+    // 家园岛远处：慢
+    act(w, { type: 'move', x: 0, z: 13, yaw: 0 });
+    c.spirits[id] = { ...c.spirits[id]!, condition: hurt };
+    run(w, CORE_HEAL.fullTicks + 5);
+    expect(c.spirits[id]!.condition).not.toBeNull();
+    run(w, HOME_HEAL_FULL_TICKS);
+    expect(c.spirits[id]!.condition).toBeNull();
+    // 野外：不恢复
     act(w, { type: 'sail', islandId: 'wheatSlope' });
-    c.spirits[id] = { ...c.spirits[id]!, weary: true, wearyRemaining: TICKS_PER_DAY };
-    run(w, TICKS_PER_DAY / 2 + 20);
-    expect(c.spirits[id]!.weary).toBe(true);
+    run(w, 300);
+    c.spirits[id] = { ...c.spirits[id]!, condition: hurt };
+    run(w, HOME_HEAL_FULL_TICKS);
+    expect(c.spirits[id]!.condition?.hp).toBe(1);
+    // 暖心包：立刻回满、清除状态；完好时不让吃
+    c.backpack['warmBun'] = 2;
+    act(w, { type: 'feed', spiritId: id, item: 'warmBun' });
+    expect(c.spirits[id]!.condition).toBeNull();
+    expect(applyIntent(content, w, 'p1', { type: 'feed', spiritId: id, item: 'warmBun' }).error).toBe('它很健康，不需要');
+  });
+
+  it('新手引导第一战：对手只有 60% 生命', () => {
+    const w = newGame();
+    act(w, { type: 'adoptStarter' });
+    act(w, { type: 'tutorialBattle' });
+    const b = w.battles[w.players['p1']!.battleId!]!;
+    const foe = b.state.sides[1].units[0]!;
+    expect(foe.hp).toBe(foe.maxHp);
+    expect(foe.maxHp).toBe(Math.max(1, Math.round(foe.stats.hp * TUTORIAL_FOE_HP)));
   });
 
   it('Lynx 反馈：暖心包可以在码头的商队买到', () => {
@@ -353,7 +389,7 @@ describe('战斗与捕获', () => {
     expect(r.events.find((e) => e.t === 'battleEnd')).toMatchObject({ result: 'lose' });
     expect(w.players['p1']!.battleId).toBeNull();
     const c = w.characters['p1']!;
-    expect(c.spirits[c.party[0]!]!.weary).toBe(true);
+    expect(c.spirits[c.party[0]!]!.condition).not.toBeUndefined();
 
     const w2 = newGame(3);
     act(w2, { type: 'adoptStarter' });
@@ -472,7 +508,7 @@ describe('存档', () => {
     act(a, { type: 'adoptStarter' });
     run(a, 5000);
     const saved = saveWorld(a);
-    expect(saved.world.version).toBe(2);
+    expect(saved.world.version).toBe(WORLD_SAVE_VERSION);
     expect(saved.characters).toHaveLength(1);
     const json = JSON.parse(JSON.stringify(saved));
     const b = loadWorld(json.world);
@@ -512,6 +548,33 @@ describe('存档', () => {
     expect(() => __migrate({ version: 1 }, 3, { 1: migrations[1] }, 'x')).toThrow(/无法从 v2 升级/);
   });
 
+  it('世界存档 v2 → v3：野生与守岛人的絮灵去掉疲惫字段、加上空的伤势', () => {
+    const w = newGame(5);
+    const saved = JSON.parse(JSON.stringify(saveWorld(w).world));
+    saved.version = 2;
+    for (const k of Object.values(saved.world.keepers) as Array<{ spirits: Record<string, unknown>[] }>) for (const sp of k.spirits) {
+      delete sp['condition'];
+      sp['weary'] = false;
+      sp['wearyRemaining'] = 0;
+    }
+    const loaded = loadWorld(saved);
+    for (const k of Object.values(loaded.keepers)) for (const sp of k.spirits) {
+      expect(sp.condition).toBeNull();
+      expect('weary' in sp).toBe(false);
+    }
+  });
+
+  it('角色存档 v2 → v3：移除疲惫，絮灵加上空的伤势', () => {
+    const c0 = createCharacter(content, { id: 'p8', name: '旧档' });
+    const sp = { ...makeSpirit(content, 'warmbud', 5, { id: 'x1' }), weary: true, wearyRemaining: 300 } as Record<string, unknown>;
+    delete sp['condition'];
+    const v2 = { kind: 'cloudsea-character', version: 2, character: { ...c0, version: 2, spirits: { x1: sp } } };
+    const c = loadCharacter(JSON.parse(JSON.stringify(v2)));
+    expect(c.version).toBe(3);
+    expect(c.spirits['x1']!.condition).toBeNull();
+    expect('weary' in c.spirits['x1']!).toBe(false);
+  });
+
   it('角色存档 v1 → v2：风帆改为云舟、补上看过的播片列表', () => {
     const v1 = {
       kind: 'cloudsea-character',
@@ -519,7 +582,7 @@ describe('存档', () => {
       character: { ...createCharacter(content, { id: 'p9', name: '旧档' }), version: 1, tools: { lantern: 2, sail: 3, gatherTool: 1 }, seenCutscenes: undefined, tutorial: { step: 6, done: true } },
     };
     const c = loadCharacter(JSON.parse(JSON.stringify(v1)));
-    expect(c.version).toBe(2);
+    expect(c.version).toBe(3);
     expect(c.tools).toEqual({ lantern: 2, skiff: 3, gatherTool: 1 });
     expect(c.seenCutscenes).toEqual(['opening']);
   });

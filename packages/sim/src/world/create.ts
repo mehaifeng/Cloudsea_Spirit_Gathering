@@ -14,7 +14,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
 
 export function createCharacter(content: ContentDb, o: { id: string; name: string; appearance?: Appearance }): CharacterState {
   return {
-    version: 2,
+    version: 3,
     id: o.id,
     name: o.name,
     appearance: o.appearance ?? DEFAULT_APPEARANCE,

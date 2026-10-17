@@ -2,8 +2,9 @@ import { affinityLevel, type ContentDb, type Situation } from '@cloudsea/content
 import { AI_PRESETS, chooseActions } from '../battle/ai';
 import { createBattle, validateActions } from '../battle/engine';
 import { resolveTurn } from '../battle/engine';
-import { capturedSpirits, expRewards, resultFor, wearyAfterBattle } from '../battle/rewards';
-import type { BattleAction, SideActions } from '../battle/types';
+import { capturedSpirits, conditionFromUnit, expRewards, resultFor } from '../battle/rewards';
+import { isDowned } from '../spirit/condition';
+import type { BattleAction, BattleState, SideActions } from '../battle/types';
 import { createRng, deriveSeed } from '../rng';
 import { addExp } from '../spirit/spirit';
 import { makeWildSpirit } from './wild';
@@ -18,11 +19,11 @@ import type { ActiveBattle, CharacterState, WorldState } from './state';
 import { dayOf, TICKS_PER_DAY } from './time';
 import { weatherAt } from './weather';
 
-export const NO_READY_SPIRITS = '队伍里的絮灵都疲惫了：回家园岛休息（有栖巢快一倍），或喂暖心包立刻恢复（码头商队有卖）';
+export const NO_READY_SPIRITS = '队伍里的絮灵都倒下了：回家园岛到核心塔附近恢复，或喂暖心包立刻回满（码头商队有卖）';
 
-/** 能出战的队伍成员：不疲惫、未蚀化、不在净化或蛋里。 */
-export function battleReady(c: CharacterState): Spirit[] {
-  return c.party.map((id) => c.spirits[id]!).filter((s) => s && !s.weary && !s.blighted && s.state === 'party');
+/** 能出战的队伍成员：生命大于 0、未蚀化、不在净化或蛋里（DESIGN 4.8，v0.7）。 */
+export function battleReady(content: ContentDb, c: CharacterState): Spirit[] {
+  return c.party.map((id) => c.spirits[id]!).filter((s) => s && !isDowned(content, s) && !s.blighted && s.state === 'party');
 }
 
 function markSeen(c: CharacterState, formIds: readonly string[]): void {
@@ -46,7 +47,7 @@ export function startWildBattle(content: ContentDb, world: WorldState, playerId:
   if (!island || !wild) return '它已经走开了';
   if (Math.hypot(wild.x - p.x, wild.z - p.z) > 5) return '再靠近一点';
   if (Object.values(world.battles).some((b) => b.wildId === wildId)) return '它正在和别人战斗';
-  const ready = battleReady(c);
+  const ready = battleReady(content, c);
   if (ready.length === 0) return NO_READY_SPIRITS;
   markSeen(c, wild.group.map((s) => s.formId));
   const id = newId(world, 'b');
@@ -73,6 +74,17 @@ export function startWildBattle(content: ContentDb, world: WorldState, playerId:
   );
 }
 
+/** 新手引导第一战的对手只有正常生命的 60%（DESIGN 13，v0.7）。 */
+export const TUTORIAL_FOE_HP = 0.6;
+
+function weakenFoes(state: BattleState, scale: number): BattleState {
+  const units = state.sides[1].units.map((u) => {
+    const hp = Math.max(1, Math.round(u.maxHp * scale));
+    return { ...u, maxHp: hp, hp };
+  });
+  return { ...state, sides: [state.sides[0], { ...state.sides[1], units }] };
+}
+
 /** 守岛人对战（每天每人一次）。 */
 export function startKeeperBattle(content: ContentDb, world: WorldState, playerId: string, keeperId: string, events: WorldEvent[]): string {
   const p = world.players[playerId]!;
@@ -82,7 +94,7 @@ export function startKeeperBattle(content: ContentDb, world: WorldState, playerI
   if (p.battleId) return '已经在战斗中';
   const blocker = keeperBattleBlocker(world, k, playerId);
   if (blocker) return blocker;
-  const ready = battleReady(c);
+  const ready = battleReady(content, c);
   if (ready.length === 0) return NO_READY_SPIRITS;
   k.lastBattleDay[playerId] = dayOf(world.tick);
   markSeen(c, k.spirits.map((s) => s.formId));
@@ -117,7 +129,7 @@ export function startTutorialBattle(content: ContentDb, world: WorldState, playe
   const p = world.players[playerId]!;
   const c = world.characters[playerId]!;
   if (p.battleId) return '已经在战斗中';
-  const partner = battleReady(c)[0];
+  const partner = battleReady(content, c)[0];
   if (!partner) return '队伍里没有能出战的絮灵';
   const rng = createRng(deriveSeed(world.seed, 'tutorial-foe'));
   const island = content.islands.get('wheatSlope')!;
@@ -136,13 +148,13 @@ export function startTutorialBattle(content: ContentDb, world: WorldState, playe
       keeperId: null,
       aiSeed: seed,
       preparedAi: null,
-      state: createBattle(content, {
+      state: weakenFoes(createBattle(content, {
         kind: 'scripted',
         sides: [{ spirits: [partner], slots: 1 }, { spirits: [foe] }],
         baseWeather: 'sun',
         seed,
         protectedSide: 0,
-      }),
+      }), TUTORIAL_FOE_HP),
     },
     events,
   );
@@ -217,9 +229,10 @@ export function finishBattle(content: ContentDb, world: WorldState, b: ActiveBat
     if (next.level > s.level) levelUps.push(id);
     c.spirits[id] = next;
   }
-  for (const id of wearyAfterBattle(b.state, 0)) {
-    const s = c.spirits[id];
-    if (s) c.spirits[id] = { ...s, weary: true, wearyRemaining: TICKS_PER_DAY };
+  // 伤势延续：玩家絮灵的生命、层数、异常带到下一场（DESIGN 4.8，v0.7）
+  for (const u of b.state.sides[0].units) {
+    const s = c.spirits[u.spiritId];
+    if (s) c.spirits[u.spiritId] = { ...s, condition: conditionFromUnit(b.state, u) };
   }
 
   const captured: string[] = [];
@@ -229,7 +242,8 @@ export function finishBattle(content: ContentDb, world: WorldState, b: ActiveBat
     if (!w || !hasRoomForSpirit(content, world, c)) continue;
     const id = `${c.id}-s${c.nextSpiritSeq++}`;
     const inParty = !w.blighted && c.party.length < 6;
-    c.spirits[id] = { ...w, id, ownerId: c.id, state: inParty ? 'party' : 'idle' };
+    const unit = b.state.sides[1].units.find((u) => u.spiritId === wid);
+    c.spirits[id] = { ...w, id, ownerId: c.id, state: inParty ? 'party' : 'idle', condition: unit ? conditionFromUnit(b.state, unit) : null };
     if (inParty) c.party.push(id);
     if (!c.codex.caught.includes(w.formId)) c.codex.caught.push(w.formId);
     if (!c.memoryShards.includes(w.formId)) c.memoryShards.push(w.formId);
@@ -260,9 +274,9 @@ export function finishBattle(content: ContentDb, world: WorldState, b: ActiveBat
     events.push({ t: 'dialogue', playerId: c.id, keeperId: k.id, lines: [pickLine(content, k.id, situation, level, createRng(deriveSeed(world.seed, `end:${b.id}`)))] });
   }
 
-  // 全员疲惫且不在家：商队顺路搭救
-  const allWeary = c.party.length > 0 && c.party.every((id) => c.spirits[id]?.weary || c.spirits[id]?.blighted);
-  const rescued = (result === 'lose' || result === 'draw') && allWeary && p.islandId !== homeIslandId(c.id);
+  // 全员倒下且不在家：商队顺路搭救
+  const allDown = c.party.length > 0 && c.party.every((id) => { const s = c.spirits[id]; return !s || s.blighted || isDowned(content, s); });
+  const rescued = (result === 'lose' || result === 'draw') && allDown && p.islandId !== homeIslandId(c.id);
   if (rescued) {
     p.islandId = homeIslandId(c.id);
     p.x = HOME_DOCK.x;

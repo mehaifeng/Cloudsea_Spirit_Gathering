@@ -78,6 +78,10 @@ function buildUnit(content: ContentDb, spirit: Spirit, side: SideIndex, index: n
     ...content.skills.get(id)!.effects,
     ...(skillMods[id]?.extraEffects ?? []),
   ]);
+  // 伤势延续（DESIGN 4.8，v0.7）：只有带着 condition 的絮灵（玩家的）会延续生命、层数与异常
+  const cond = spirit.condition;
+  const stages = emptyStages();
+  for (const [k, v] of Object.entries(cond?.stages ?? {})) stages[k as StageStat] = v ?? 0;
   return {
     uid: `${side}:${index}`,
     spiritId: spirit.id,
@@ -90,15 +94,15 @@ function buildUnit(content: ContentDb, spirit: Spirit, side: SideIndex, index: n
     rarity: line.rarity,
     stats,
     maxHp: stats.hp,
-    hp: stats.hp,
+    hp: cond ? Math.max(0, Math.min(stats.hp, Math.floor(cond.hp))) : stats.hp,
     skills: [...spirit.skillSlots],
     passiveEffects,
     skillMods,
     wild,
     blighted: spirit.blighted,
-    ailment: null,
-    stages: emptyStages(),
-    timedStages: [],
+    ailment: cond?.ailment ? { ...cond.ailment } : null,
+    stages,
+    timedStages: (cond?.timedStages ?? []).map((t) => ({ stat: t.stat, delta: t.delta, endsAfterTurn: t.turnsLeft })),
     downed: false,
     captured: false,
     charging: null,

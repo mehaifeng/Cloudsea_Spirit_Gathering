@@ -17,7 +17,7 @@ export interface Appearance {
  * 可带进任何世界。
  */
 export interface CharacterState {
-  readonly version: 2;
+  readonly version: 3;
   readonly id: string;
   name: string;
   appearance: Appearance;

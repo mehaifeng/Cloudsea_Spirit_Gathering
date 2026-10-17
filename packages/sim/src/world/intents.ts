@@ -13,6 +13,7 @@ import { createRng, deriveSeed } from '../rng';
 import { breed } from '../spirit/breeding';
 import { decodeSpiritCode } from '../spirit/code';
 import { generateWildGenes } from '../spirit/genes';
+import { healSpirit, maxHpOf } from '../spirit/condition';
 import { createSpirit, equipSkills, evolve, formOf, MAX_SKILL_SLOTS } from '../spirit/spirit';
 import { forfeitBattle, startKeeperBattle, startTutorialBattle, startWildBattle, submitBattleActions } from './battleflow';
 import { homeIslandId } from './create';
@@ -372,10 +373,13 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
       const s = spirit(intent.spiritId);
       const item = content.items.get(intent.item);
       if (!s || !item?.food) return fail('它不吃这个');
+      // 治疗食物（DESIGN 4.8，v0.7）：完好的絮灵不用吃，免得浪费
+      if (item.food.heal > 0 && !s.condition) return fail('它很健康，不需要');
       if (!payFrom(atHome(world, playerId) ? homeBags(world, c) : [c.backpack], [{ item: item.id, count: 1 }])) return fail('没有这个食物');
-      if (item.food.curesWeary && s.weary) {
-        c.spirits[s.id] = { ...s, weary: false, wearyRemaining: 0 };
-        events.push({ t: 'recovered', playerId, spiritId: s.id });
+      if (item.food.heal > 0) {
+        const healed = healSpirit(content, s, item.food.heal * maxHpOf(content, s));
+        c.spirits[s.id] = healed;
+        if (!healed.condition) events.push({ t: 'recovered', playerId, spiritId: s.id });
       }
       return ok();
     }

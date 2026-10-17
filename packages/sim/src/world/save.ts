@@ -7,8 +7,8 @@ import type { CharacterState, PlayerRuntime, WorldState } from './state';
  * 存档（铁律 7、DESIGN 9.3 / 9.4）：世界存档与角色存档分开，都带 version。
  * 结构变更时：版本号 +1，在 MIGRATIONS 里加一条从旧版本升级的函数，并补测试。
  */
-export const WORLD_SAVE_VERSION = 2;
-export const CHARACTER_SAVE_VERSION = 2;
+export const WORLD_SAVE_VERSION = 3;
+export const CHARACTER_SAVE_VERSION = 3;
 
 export interface WorldSaveFile {
   readonly kind: 'cloudsea-world';
@@ -49,6 +49,18 @@ export const WORLD_MIGRATIONS: Readonly<Record<number, Migration>> = {
     }
     return { ...data, world: w };
   },
+  /** v2 → v3（DESIGN v0.7）：移除疲惫；野生 / 守岛人的絮灵加上空的伤势字段。 */
+  2: (data) => {
+    const w = JSON.parse(JSON.stringify(data['world'])) as Record<string, unknown>;
+    const fix = (sp: Record<string, unknown>) => {
+      delete sp['weary'];
+      delete sp['wearyRemaining'];
+      sp['condition'] = null;
+    };
+    for (const isl of Object.values((w['islands'] ?? {}) as Record<string, { wild?: Record<string, { group: Record<string, unknown>[] }> }>)) for (const g of Object.values(isl.wild ?? {})) g.group.forEach(fix);
+    for (const k of Object.values((w['keepers'] ?? {}) as Record<string, { spirits?: Record<string, unknown>[] }>)) (k.spirits ?? []).forEach(fix);
+    return { ...data, world: w };
+  },
 };
 export const CHARACTER_MIGRATIONS: Readonly<Record<number, Migration>> = {
   /** v1 → v2（DESIGN v0.5）：工具“风帆”改为“云舟”；新增看过的播片列表（已完成引导的角色视为看过开场）。 */
@@ -59,6 +71,16 @@ export const CHARACTER_MIGRATIONS: Readonly<Record<number, Migration>> = {
     delete tools['sail'];
     const tutorial = c['tutorial'] as { done?: boolean } | undefined;
     return { ...data, character: { ...c, version: 2, tools, seenCutscenes: tutorial?.done ? ['opening'] : [] } };
+  },
+  /** v2 → v3（DESIGN v0.7）：移除疲惫，改为伤势延续；原来疲惫的絮灵视为完好（不再惩罚）。 */
+  2: (data) => {
+    const c = { ...(data['character'] as Record<string, unknown>) };
+    const spirits: Record<string, Record<string, unknown>> = {};
+    for (const [id, sp] of Object.entries((c['spirits'] ?? {}) as Record<string, Record<string, unknown>>)) {
+      const { weary: _w, wearyRemaining: _r, ...rest } = sp;
+      spirits[id] = { ...rest, condition: null };
+    }
+    return { ...data, character: { ...c, version: 3, spirits } };
   },
 };
 

@@ -67,7 +67,7 @@ export function workEfficiency(content: ContentDb, spirit: Spirit, task: WorkTas
     }
   }
   const levelTerm = 0.5 + spirit.level / 120;
-  return match * partBonus * levelTerm * (spirit.weary ? 0.5 : 1);
+  return match * partBonus * levelTerm;
 }
 
 /** 找到絮灵和它的主人（工位上的絮灵可能属于联机的其他玩家）。 */

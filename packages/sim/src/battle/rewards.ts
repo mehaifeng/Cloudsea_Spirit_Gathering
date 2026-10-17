@@ -1,6 +1,7 @@
-import { STATS, type ContentDb } from '@cloudsea/content';
+import { STAGE_STATS, STATS, type ContentDb } from '@cloudsea/content';
+import type { SpiritCondition } from '../spirit/types';
 import { other } from './engine';
-import type { BattleState, SideIndex } from './types';
+import type { BattleState, BattleUnit, SideIndex } from './types';
 
 export type BattleResult = 'win' | 'lose' | 'fled' | 'draw';
 
@@ -31,11 +32,17 @@ export function expRewards(content: ContentDb, state: BattleState, side: SideInd
   return out;
 }
 
-/** 战败时进入疲惫的絮灵：上过场的全部（DESIGN 5.4）。 */
-export function wearyAfterBattle(state: BattleState, side: SideIndex): string[] {
-  const r = resultFor(state, side);
-  if (r !== 'lose' && r !== 'draw') return [];
-  return state.sides[side].units.filter((u) => u.participated).map((u) => u.spiritId);
+/**
+ * 战斗结束时单位的伤势（DESIGN 4.8，v0.7）：生命、层数、限时层数（换算成还剩几回合）、状态异常。
+ * 完好（满血、无层数、无异常）时返回 null。
+ */
+export function conditionFromUnit(state: BattleState, u: BattleUnit): SpiritCondition | null {
+  const stages: Partial<Record<(typeof STAGE_STATS)[number], number>> = {};
+  for (const k of STAGE_STATS) if (u.stages[k]) stages[k] = u.stages[k];
+  const timedStages = u.timedStages.map((t) => ({ stat: t.stat, delta: t.delta, turnsLeft: Math.max(1, t.endsAfterTurn - state.turn + 1) }));
+  const hp = u.downed ? 0 : u.hp;
+  if (hp >= u.maxHp && Object.keys(stages).length === 0 && timedStages.length === 0 && !u.ailment) return null;
+  return { hp, stages, timedStages, ailment: u.ailment ? { ...u.ailment } : null };
 }
 
 /** 本场被捕获的对方絮灵 id。 */

@@ -11,7 +11,7 @@ import {
   validateActions,
 } from './engine';
 import { baseDamage, catchChance, effectiveness, fleeChance, weatherMultiplier } from './formulas';
-import { capturedSpirits, expRewards, resultFor, wearyAfterBattle } from './rewards';
+import { capturedSpirits, conditionFromUnit, expRewards, resultFor } from './rewards';
 import type { BattleState, SideActions } from './types';
 
 const content = getContent();
@@ -177,7 +177,8 @@ describe('回合结算', () => {
     const r2 = step(s, jab(0), defaultActions(s, 1, false));
     expect(resultFor(r2.state, 0)).toBe('win');
     expect(resultFor(r2.state, 1)).toBe('lose');
-    expect(wearyAfterBattle(r2.state, 1)).toEqual(['b1', 'b2']);
+    // 伤势延续（v0.7）：倒下的单位结算为生命 0
+    expect(r2.state.sides[1].units.map((u) => conditionFromUnit(r2.state, u)?.hp)).toEqual([0, 0]);
     const exp = expRewards(content, r2.state, 0);
     expect(exp.get('a1')).toBe(2 * Math.floor((250 * 1) / 20));
   });

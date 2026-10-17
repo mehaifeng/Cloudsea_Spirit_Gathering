@@ -13,7 +13,7 @@ export const BUILDINGS: readonly BuildingInput[] = [
     workSlots: 0, workTasks: [], countsTowardLimit: false, maxCount: 1,
   },
   {
-    id: 'nest', name: '栖巢', kind: 'nest', description: '絮灵休息的小窝，每座住 4 只。在这里休息恢复疲惫更快。',
+    id: 'nest', name: '栖巢', kind: 'nest', description: '絮灵休息的小窝，每座住 4 只。家园岛上的絮灵恢复生命快一倍。',
     size: { w: 3, d: 3 }, cost: { shells: 50, items: [{ item: 'wood', count: 10 }, { item: 'stone', count: 5 }] },
     buildWork: 600, coreLevel: 1, starterBlueprint: true, workSlots: 0, workTasks: [], capacity: 4, countsTowardLimit: true,
   },
@@ -44,7 +44,7 @@ export const BUILDINGS: readonly BuildingInput[] = [
     buildWork: 1200, coreLevel: 2, starterBlueprint: false, workSlots: 0, workTasks: [], capacity: 2, countsTowardLimit: true,
   },
   {
-    id: 'hotSpring', name: '温泉', kind: 'hotSpring', description: '疲惫的絮灵泡一泡很快就好；也让蛋孵得更快。',
+    id: 'hotSpring', name: '温泉', kind: 'hotSpring', description: '家园岛上的絮灵恢复生命快四倍；也让蛋孵得更快。',
     size: { w: 4, d: 4 }, cost: { shells: 400, items: [{ item: 'brick', count: 15 }, { item: 'copperIngot', count: 4 }] },
     buildWork: 2400, coreLevel: 3, starterBlueprint: false, workSlots: 0, workTasks: [], capacity: 4, countsTowardLimit: true, maxCount: 1,
   },
