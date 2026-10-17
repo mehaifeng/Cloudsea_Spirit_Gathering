@@ -12,6 +12,16 @@ export interface HumanoidLook {
   readonly lantern?: boolean;
 }
 
+/** 采集动作（DESIGN 14.3，v0.5）：砍（斧）、凿（镐）、摘（篮子）。 */
+export type ActionKind = 'chop' | 'mine' | 'pick';
+const ACTION_DURATION = 0.95;
+const ACTION_IMPACT = 0.5;
+
+const smoothK = (k: number, a: number, b: number): number => {
+  const t = clamp((k - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
 /** 提灯发光材质（夜里亮起）。 */
 export const lanternMaterial = new THREE.MeshStandardMaterial({ color: 0xffd59a, emissive: 0xffa340, emissiveIntensity: 0.3, flatShading: true });
 
@@ -41,6 +51,15 @@ export class HumanoidView {
   lookAt: { x: number; z: number } | null = null;
   /** 挥手动作计时。 */
   private wave = 0;
+  /** 跳跃：离地高度、竖直速度、起跳前的蓄力计时、下蹲弹簧（负值 = 蹲下）。 */
+  private airY = 0;
+  private vy = 0;
+  private jumpDelay = 0;
+  private crouch = 0;
+  private crouchV = 0;
+  /** 正在做的动作。 */
+  private action: { kind: ActionKind; t: number; onImpact: (() => void) | null } | null = null;
+  private readonly tools = new Map<string, THREE.Object3D>();
 
   constructor(look: HumanoidLook, glowTexture?: THREE.Texture) {
     const r = new Rig();
@@ -165,10 +184,98 @@ export class HumanoidView {
     this.wave = 1.6;
   }
 
+  get airborne(): boolean {
+    return this.airY > 0.001 || this.jumpDelay > 0;
+  }
+
+  get busy(): boolean {
+    return this.action !== null;
+  }
+
+  /** 跳：站立、行走、奔跑中都能跳（水平速度由控制器保持）。返回是否起跳。 */
+  jump(): boolean {
+    if (this.airborne || this.action) return false;
+    this.jumpDelay = 0.07;
+    this.crouchV -= 2.2;
+    return true;
+  }
+
+  /** 做一个采集动作；onImpact 在工具落下的那一刻调用。 */
+  playAction(kind: ActionKind, onImpact: () => void): boolean {
+    if (this.action || this.airborne) return false;
+    this.action = { kind, t: 0, onImpact };
+    this.showTool(kind);
+    return true;
+  }
+
+  private tool(kind: string): THREE.Object3D {
+    let t = this.tools.get(kind);
+    if (t) return t;
+    t = new THREE.Group();
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.72, 5), mat(0x8a5f40));
+    if (kind === 'chop') {
+      handle.position.y = -0.3;
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.16, 0.2), mat(0xb8c0c8, { metalness: 0.3, roughness: 0.5 }));
+      blade.position.set(0, -0.6, 0.1);
+      t.add(handle, blade);
+      this.B['hdR']!.add(t);
+    } else if (kind === 'mine') {
+      handle.position.y = -0.3;
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.46), mat(0x8f98a0, { metalness: 0.3, roughness: 0.5 }));
+      head.position.set(0, -0.62, 0);
+      const tip1 = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.12, 4), mat(0x8f98a0));
+      tip1.rotation.x = Math.PI / 2;
+      tip1.position.set(0, -0.62, 0.28);
+      const tip2 = tip1.clone();
+      tip2.rotation.x = -Math.PI / 2;
+      tip2.position.z = -0.28;
+      t.add(handle, head, tip1, tip2);
+      this.B['hdR']!.add(t);
+    } else {
+      // 篮子挂在左手
+      const basket = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.12, 0.16, 8, 1, true), mat(0xc9a27a, { side: THREE.DoubleSide }));
+      basket.position.y = -0.2;
+      const loop = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.015, 4, 10, Math.PI), mat(0x8a5f40));
+      loop.position.y = -0.12;
+      t.add(basket, loop);
+      this.B['hdL']!.add(t);
+    }
+    this.tools.set(kind, t);
+    return t;
+  }
+
+  private showTool(kind: ActionKind | null): void {
+    for (const [k, t] of this.tools) t.visible = k === kind;
+    if (kind) this.tool(kind).visible = true;
+    // 拿工具时把提灯收起来（提灯在右手）
+    if (this.pivot) this.pivot.visible = kind === null || kind === 'pick';
+  }
+
   /** 由控制器给出位置 / 朝向 / 速度后，算出姿态。 */
   update(dt: number, t: number, ground: (x: number, z: number) => number): void {
     const gy = ground(this.x, this.z);
-    this.group.position.set(this.x, gy, this.z);
+    // 跳跃：蓄力 → 起跳 → 重力 → 落地缓冲（弹簧）
+    if (this.jumpDelay > 0) {
+      this.jumpDelay -= dt;
+      if (this.jumpDelay <= 0) {
+        this.jumpDelay = 0;
+        this.vy = 4.4;
+        this.airY = 0.001;
+      }
+    }
+    if (this.airY > 0) {
+      this.vy -= 13 * dt;
+      this.airY += this.vy * dt;
+      if (this.airY <= 0) {
+        this.airY = 0;
+        this.crouchV -= Math.min(4, Math.abs(this.vy) * 0.55);
+        this.vy = 0;
+      }
+    }
+    this.crouchV += (-90 * this.crouch - 11 * this.crouchV) * dt;
+    this.crouch = clamp(this.crouch + this.crouchV * dt, -0.28, 0.08);
+    const inAir = this.airY > 0.02;
+    this.group.position.set(this.x, gy + this.airY, this.z);
     this.group.rotation.y = this.yaw;
     const B = this.B;
     const w = clamp(this.speed / 1.4, 0, 1);
@@ -185,9 +292,30 @@ export class HumanoidView {
       const wz = this.z - lx * sy + lz * cy;
       feet.push({ L, lx, lz, y: ground(wx, wz) - gy, lift: gf[1] * w });
     }
-    const hipsY = 0.88 + Math.cos(this.phase * Math.PI * 4) * 0.028 * w + Math.min(0, feet[0]!.y, feet[1]!.y) + Math.sin(t * 1.8) * 0.006 * (1 - w);
+    // 动作进度
+    const act = this.action;
+    let ak = 0;
+    if (act) {
+      act.t += dt;
+      ak = act.t / ACTION_DURATION;
+      if (act.onImpact && ak >= ACTION_IMPACT) {
+        const cb = act.onImpact;
+        act.onImpact = null;
+        cb();
+      }
+      if (ak >= 1) {
+        this.action = null;
+        this.showTool(null);
+      }
+    }
+    const pickCrouch = act?.kind === 'pick' ? -0.18 * (smoothK(ak, 0, 0.4) - smoothK(ak, 0.65, 1)) : 0;
+    const hipsY = 0.88 + Math.cos(this.phase * Math.PI * 4) * 0.028 * w * (inAir ? 0 : 1) + Math.min(0, feet[0]!.y, feet[1]!.y) + Math.sin(t * 1.8) * 0.006 * (1 - w) + this.crouch + pickCrouch;
     B['hips']!.position.y = hipsY;
-    for (const f of feet) solveLeg(B[`th${f.L}`]!, B[`sh${f.L}`]!, B[`ft${f.L}`]!, { x: f.lx, y: hipsY - 0.04, z: 0 }, { x: f.lx, y: f.y + 0.06 + f.lift, z: f.lz }, 0.42, 0.4, 1);
+    for (const f of feet) {
+      // 空中收腿；地面上按步态踩地
+      const target = inAir ? { x: f.lx, y: Math.max(hipsY - 0.62, -this.airY + 0.06), z: f.L === 'L' ? 0.1 : -0.05 } : { x: f.lx, y: f.y + 0.06 + f.lift, z: f.lz };
+      solveLeg(B[`th${f.L}`]!, B[`sh${f.L}`]!, B[`ft${f.L}`]!, { x: f.lx, y: hipsY - 0.04, z: 0 }, target, 0.42, 0.4, 1);
+    }
     const sw = Math.cos(this.phase * Math.PI * 2);
     B['spine']!.rotation.set(0.1 * w * Math.min(this.speed / 3, 1.3) + Math.sin(t * 1.8) * 0.015, Math.sin(this.phase * Math.PI * 2) * 0.12 * w, Math.sin(this.phase * Math.PI * 2) * 0.03 * w);
     B['chest']!.rotation.y = -B['spine']!.rotation.y * 0.6;
@@ -200,6 +328,29 @@ export class HumanoidView {
     }
     B['uaR']!.rotation.set(-0.2 - sw * 0.2 * w, 0, -0.14);
     B['faR']!.rotation.x = this.pivot ? -0.85 : -0.25 - 0.25 * w;
+    if (inAir) {
+      // 空中张开手臂保持平衡
+      B['uaL']!.rotation.set(-0.7, 0, 0.55);
+      B['uaR']!.rotation.set(-0.7, 0, -0.55);
+    }
+    if (act && (act.kind === 'chop' || act.kind === 'mine')) {
+      // 举起 → 劈下 → 收回
+      const up = smoothK(ak, 0, 0.38);
+      const down = smoothK(ak, 0.38, 0.52);
+      const back = smoothK(ak, 0.6, 1);
+      const arm = -0.2 + (-2.8 + 0.2) * up + (2.5) * down;
+      B['uaR']!.rotation.set(arm * (1 - back) + -0.2 * back, 0, -0.1);
+      B['faR']!.rotation.x = (-0.9 * up + 0.8 * down) * (1 - back) + -0.3 * back;
+      B['uaL']!.rotation.set(arm * 0.9 * (1 - back), 0, 0.1);
+      B['spine']!.rotation.x += (-0.12 * up + 0.5 * down) * (1 - back);
+    } else if (act && act.kind === 'pick') {
+      const reach = smoothK(ak, 0.1, 0.45) - smoothK(ak, 0.6, 1);
+      B['spine']!.rotation.x += 0.5 * reach;
+      B['uaR']!.rotation.set(-0.2 - 1.0 * reach, 0, -0.1);
+      B['faR']!.rotation.x = -0.4 * reach - 0.2;
+      B['uaL']!.rotation.set(-0.5, 0, 0.2);
+      B['faL']!.rotation.x = -1.3;
+    }
     let hy = 0;
     if (this.lookAt) {
       const d = Math.hypot(this.lookAt.x - this.x, this.lookAt.z - this.z);

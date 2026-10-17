@@ -128,6 +128,22 @@ test('新手引导与核心循环', async () => {
   // 3 出航、捕获
   await sail(win, 'wheatSlope', 'screenshots/05a-arrival.png');
   await win.screenshot({ path: 'screenshots/05-wheat-slope.png' });
+
+  // 动作：对着树按 E 砍树（斧子），空格起跳（v0.5）
+  const tree = await g<{ id: string; x: number; z: number }>(win, `g.interactables().find((i) => i.id.includes(':tree:'))`);
+  await g(win, `g.teleport(${tree.x}, ${tree.z + 1.3})`);
+  await g(win, 'g.setCamera(0.9, 0.25, 5)');
+  await win.waitForTimeout(400);
+  const woodBefore = await g<number>(win, `g.world().characters.p1.backpack.wood ?? 0`);
+  await win.keyboard.press('KeyE');
+  await win.waitForTimeout(330);
+  await win.screenshot({ path: 'screenshots/05c-chop.png' });
+  await win.waitForTimeout(900);
+  expect(await g<number>(win, `g.world().characters.p1.backpack.wood ?? 0`)).toBeGreaterThan(woodBefore);
+  await win.keyboard.press('Space');
+  await win.waitForTimeout(260);
+  await win.screenshot({ path: 'screenshots/05d-jump.png' });
+  await win.waitForTimeout(800);
   for (let attempt = 0; attempt < 8 && (await g<number>(win, 'g.world().characters.p1.stats.caught')) < 1; attempt++) {
     const t = await g<{ id: string; x: number; z: number } | null>(
       win,

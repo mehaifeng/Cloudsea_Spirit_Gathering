@@ -65,6 +65,8 @@ interface RectObstacle {
   z: number;
   hw: number;
   hd: number;
+  /** 矮障碍（围栏、路灯底座）：跳起来能越过。 */
+  low?: boolean;
 }
 
 const HOME_REGION = 'sunPlains' as const;
@@ -420,7 +422,8 @@ export class ExploreView {
       const crop = inst.crop ? { id: inst.crop.cropId, growth: inst.crop.progress / this.content.crops.get(inst.crop.cropId)!.growTicks } : null;
       entry.view.update({ built: inst.built, progress: def.buildWork ? inst.buildProgress / def.buildWork : 1, crop, working: !!inst.job && inst.workers.length > 0 }, this.t);
       if (def.kind === 'field' || inst.type === 'path' || inst.type === 'flowerbed') continue;
-      if (inst.type === 'lamp' || inst.type === 'fence') this.rects.push({ x: inst.x + fp.w / 2, z: inst.z + fp.d / 2, hw: 0.2, hd: 0.2 });
+      if (inst.type === 'fence') this.rects.push({ x: inst.x + fp.w / 2, z: inst.z + fp.d / 2, hw: 0.5, hd: 0.12, low: true });
+      else if (inst.type === 'lamp') this.rects.push({ x: inst.x + fp.w / 2, z: inst.z + fp.d / 2, hw: 0.2, hd: 0.2 });
       else if (def.kind !== 'decoration') this.rects.push({ x: inst.x + fp.w / 2, z: inst.z + fp.d / 2, hw: fp.w / 2 - 0.15, hd: fp.d / 2 - 0.15 });
     }
     for (const [id, e] of this.buildings) {
@@ -452,9 +455,11 @@ export class ExploreView {
     const rz = -Math.sin(this.camYaw);
     const mx = rx * ix + fx * iy;
     const mz = rz * ix + fz * iy;
-    const target = mag * (ax.run ? 4.6 : 3.1);
-    P.speed = lerp(P.speed, target, Math.min(1, dt * (target > P.speed ? 6 : 9)));
-    if (mag > 0.08) P.yaw += angDiff(P.yaw, Math.atan2(mx, mz)) * Math.min(1, dt * 10);
+    // 做动作时站定；空中保持起跳时的速度
+    const target = P.busy ? 0 : mag * (ax.run ? 4.6 : 3.1);
+    if (controlsEnabled && input?.hit('Space')) P.jump();
+    if (!P.airborne) P.speed = lerp(P.speed, target, Math.min(1, dt * (target > P.speed ? 6 : 9)));
+    if (mag > 0.08 && !P.busy) P.yaw += angDiff(P.yaw, Math.atan2(mx, mz)) * Math.min(1, dt * (P.airborne ? 3 : 10));
     P.x += Math.sin(P.yaw) * P.speed * dt;
     P.z += Math.cos(P.yaw) * P.speed * dt;
     const push = (o: { x: number; z: number }, x: number, z: number, r: number) => {
@@ -469,6 +474,7 @@ export class ExploreView {
     for (const o of this.obstacles) push(P, o.x, o.z, o.r + 0.3);
     // 建筑：矩形碰撞，沿穿透最浅的方向推出去
     for (const r of this.rects) {
+      if (r.low && P.airborne) continue;
       const dx = P.x - r.x;
       const dz = P.z - r.z;
       const px = r.hw + 0.3 - Math.abs(dx);
@@ -600,6 +606,24 @@ export class ExploreView {
       }
     }
     this.nearest = near;
+  }
+
+  /**
+   * 采集：转身面向采集点，播放对应动作（树用斧、石头矿石雾晶用镐、浆果用篮子）；
+   * 工具落下时调用 onImpact（发意图、出粒子）。
+   */
+  startGather(it: Interactable, onImpact: () => void): boolean {
+    const P = this.player;
+    const kind = it.id.includes(':tree:') ? 'chop' : it.id.includes(':bush:') ? 'pick' : 'mine';
+    P.yaw = Math.atan2(it.x - P.x, it.z - P.z);
+    P.speed = 0;
+    return P.playAction(kind, () => {
+      const at = new THREE.Vector3(it.x, this.ground(it.x, it.z) + (kind === 'chop' ? 1.2 : 0.5), it.z);
+      if (kind === 'chop') this.fx.spawn('spark', at, 8, { size: 0.25, vy: 1.2, life: 0.8, spread: 2, color: 0x8fc66e });
+      else if (kind === 'mine') this.fx.spawn('puff', at, 6, { size: 0.4, vy: 0.8, life: 0.7, spread: 1.6, color: 0xb9b0a8 });
+      else this.fx.spawn('heart', at, 3, { size: 0.2, vy: 1, life: 0.8, spread: 0.8 });
+      onImpact();
+    });
   }
 
   /** 当前探索镜头的机位（播片结束时回到这里）。 */

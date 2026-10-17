@@ -57,7 +57,8 @@ export function makeGatherProp(kind: GatherKind, seed: number): PropView {
   switch (kind) {
     case 'tree': {
       const k = rnd();
-      const t = makeTree(0.75 + rnd() * 0.45, k < 0.6 ? 'green' : k < 0.85 ? 'bloom' : 'amber', rnd);
+      // 尺度规范：树 3–6 米（DESIGN 14.1）
+      const t = makeTree((0.75 + rnd() * 0.45) * 1.45, k < 0.6 ? 'green' : k < 0.85 ? 'bloom' : 'amber', rnd);
       group.add(t.group);
       foliage = t.foliage;
       extras.push(t.foliage);

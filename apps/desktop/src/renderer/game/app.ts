@@ -407,7 +407,7 @@ export class App {
     const c = w.characters[PLAYER_ID]!;
     switch (it.kind) {
       case 'gather':
-        if (await this.act({ type: 'gather', nodeId: it.id })) this.explore?.fx.spawn('puff', new THREE.Vector3(it.x, this.explore.ground(it.x, it.z) + 0.6, it.z), 8, { size: 0.5, vy: 0.6, life: 0.8, spread: 1.6 });
+        this.explore?.startGather(it, () => void this.act({ type: 'gather', nodeId: it.id }));
         break;
       case 'wild':
         await this.act({ type: 'encounter', wildId: it.id });

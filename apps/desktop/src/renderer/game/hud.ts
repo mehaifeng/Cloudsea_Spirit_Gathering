@@ -56,7 +56,7 @@ export class Hud {
           ? '鼠标选位置 · 点击放置 · R 旋转 · Esc / 右键退出'
           : mode === 'battle'
             ? '方向键选择 · Enter 确认 · Esc 返回'
-            : `WASD 移动 · 拖动转视角 · E 交互 · Tab 菜单${p.islandId === homeIslandId(PLAYER_ID) ? ' · B 建造' : ''} · M 星图`;
+            : `WASD 移动 · Shift 跑 · 空格 跳 · 拖动转视角 · E 交互 · Tab 菜单${p.islandId === homeIslandId(PLAYER_ID) ? ' · B 建造' : ''} · M 星图`;
       this.ui.hints.classList.toggle('hidden', false);
     }
     const prompt = mode === 'explore' && nearest ? nearest.label : '';
