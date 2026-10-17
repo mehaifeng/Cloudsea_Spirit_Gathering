@@ -9,6 +9,18 @@ async function g<T = unknown>(win: Page, expr: string): Promise<T> {
   return win.evaluate(`(async () => { const g = window.__game; return ${expr}; })()`) as Promise<T>;
 }
 
+/** 播片：截一张图（可选）后按 Esc 跳过。 */
+async function skipCutscene(win: Page, shot?: string): Promise<void> {
+  for (let i = 0; i < 20 && (await g<string>(win, 'g.mode()')) !== 'cutscene'; i++) await win.waitForTimeout(100);
+  if ((await g<string>(win, 'g.mode()')) !== 'cutscene') return;
+  if (shot) {
+    await win.waitForTimeout(1600);
+    await win.screenshot({ path: shot });
+  }
+  await win.keyboard.press('Escape');
+  await win.waitForTimeout(500);
+}
+
 async function closeDialogues(win: Page): Promise<void> {
   for (let i = 0; i < 30 && (await g<boolean>(win, 'g.dialogueOpen()')); i++) {
     await win.keyboard.press('Enter');
@@ -45,10 +57,11 @@ async function fight(win: Page, prefer: RegExp[], capture = false): Promise<void
   await win.waitForTimeout(500);
 }
 
-async function sail(win: Page, islandId: string): Promise<void> {
+async function sail(win: Page, islandId: string, shot?: string): Promise<void> {
   const r = await g<{ ok: boolean; error?: string }>(win, `g.act({ type: 'sail', islandId: '${islandId}' })`);
   expect(r.ok, r.error).toBe(true);
   await win.waitForTimeout(1900);
+  if (islandId !== 'home') await skipCutscene(win, shot);
 }
 
 async function gatherAll(win: Page, kinds: string[]): Promise<number> {
@@ -81,7 +94,14 @@ test('新手引导与核心循环', async () => {
 
   // 0 坠落 → 移动
   await win.getByText('开始新的旅程').click();
-  await win.waitForTimeout(1500);
+  await win.waitForTimeout(2600);
+  await win.screenshot({ path: 'screenshots/02a-opening.png' });
+  await win.waitForTimeout(5200);
+  await win.screenshot({ path: 'screenshots/02b-opening-crash.png' });
+  await win.waitForTimeout(3600);
+  await win.screenshot({ path: 'screenshots/02c-opening-light.png' });
+  await skipCutscene(win);
+  await win.waitForTimeout(500);
   await win.screenshot({ path: 'screenshots/02-intro.png' });
   await closeDialogues(win);
   await win.keyboard.down('KeyW');
@@ -106,7 +126,7 @@ test('新手引导与核心循环', async () => {
   expect(await g(win, 'g.world().characters.p1.tutorial.step')).toBe(3);
 
   // 3 出航、捕获
-  await sail(win, 'wheatSlope');
+  await sail(win, 'wheatSlope', 'screenshots/05a-arrival.png');
   await win.screenshot({ path: 'screenshots/05-wheat-slope.png' });
   for (let attempt = 0; attempt < 8 && (await g<number>(win, 'g.world().characters.p1.stats.caught')) < 1; attempt++) {
     const t = await g<{ id: string; x: number; z: number } | null>(
@@ -118,6 +138,7 @@ test('新手引导与核心循环', async () => {
     await win.waitForTimeout(200);
     const r = await g<{ ok: boolean }>(win, `g.act({ type: 'encounter', wildId: '${t.id}' })`);
     if (!r.ok) continue;
+    await skipCutscene(win, attempt === 0 ? 'screenshots/05b-first-wild.png' : undefined);
     await win.waitForTimeout(1500);
     if (attempt === 0) await win.screenshot({ path: 'screenshots/06-battle-wild.png' });
     await fight(win, [], true);
@@ -201,6 +222,7 @@ test('新手引导与核心循环', async () => {
   await win.waitForTimeout(500);
   expect(await g(win, 'g.nearest()?.kind')).toBe('keeper');
   await win.keyboard.press('KeyE');
+  await skipCutscene(win, 'screenshots/14a-keeper-intro.png');
   await win.waitForTimeout(400);
   await win.screenshot({ path: 'screenshots/14-keeper.png' });
   await win.locator('#modal .btn', { hasText: '聊聊' }).click();

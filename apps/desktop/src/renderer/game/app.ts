@@ -14,6 +14,8 @@ import { buildIslandMesh, CreatureView, Environment, lookFromSpirit } from '@clo
 import { button, focusFirst, h } from '@cloudsea/ui';
 import * as THREE from 'three';
 import { BattleView } from './battle';
+import { Cutscene, type Shot } from './cinematic';
+import { arrivalShots, firstWildShots, keeperIntroShots, openingShots } from './cutscenes';
 import { BuildMode } from './build';
 import { ExploreView, type Interactable } from './explore';
 import { Hud } from './hud';
@@ -25,7 +27,7 @@ import { itemName } from './text';
 import { Tutorial } from './tutorial';
 import { UiRoot } from './uiRoot';
 
-type Mode = 'title' | 'explore' | 'build' | 'battle' | 'sailing';
+type Mode = 'title' | 'explore' | 'build' | 'battle' | 'sailing' | 'cutscene';
 
 /** 标题画面背景：一座小岛和几只随机絮灵，镜头慢慢绕。 */
 class TitleScene {
@@ -96,6 +98,7 @@ export class App {
   private pendingTurns: Array<{ battleId: string; events: readonly BattleEvent[] }> = [];
   private pendingEnd: Extract<WorldEvent, { t: 'battleEnd' }> | null = null;
   private titleEl: HTMLElement | null = null;
+  private cutscene: Cutscene | null = null;
   private readonly ctx: Ctx;
   /** 自动化测试模式：固定世界种子、打开测试钩子。 */
   private readonly testMode = new URLSearchParams(location.search).get('test') === '1';
@@ -174,9 +177,40 @@ export class App {
     this.world = session.client.world;
     this.enterExplore();
     void session.save();
+    // 开场播片（新角色第一次进入）
+    const c = this.world?.characters[PLAYER_ID];
+    if (c && this.explore && !c.tutorial.done && c.tutorial.step === 0) this.playCutscene('opening', openingShots(this.explore), () => {});
+  }
+
+  /**
+   * 播一段一次性播片：看过就直接执行 then；没看过先记下（发意图），播完再执行 then。
+   */
+  private playCutscene(id: string, shots: Shot[], then: () => void): void {
+    const c = this.world?.characters[PLAYER_ID];
+    if (!this.explore || !c || c.seenCutscenes.includes(id) || this.cutscene) {
+      then();
+      return;
+    }
+    void this.act({ type: 'seenCutscene', id });
+    this.ui.closeAllModals();
+    this.mode = 'cutscene';
+    this.explore.cameraLocked = true;
+    this.hud.clear();
+    this.ui.tutorial.classList.add('hidden');
+    this.ui.toasts.classList.add('hidden');
+    this.cutscene = new Cutscene(shots, this.ui.layer, () => {
+      this.cutscene = null;
+      this.ui.toasts.classList.remove('hidden');
+      if (this.explore) this.explore.cameraLocked = false;
+      this.ui.tutorial.classList.remove('hidden');
+      if (this.mode === 'cutscene') this.mode = 'explore';
+      then();
+    });
   }
 
   private quitToTitle(): void {
+    this.cutscene?.dispose();
+    this.cutscene = null;
     this.ui.closeAllModals();
     this.battle?.dispose();
     this.battle = null;
@@ -238,9 +272,14 @@ export class App {
   private onSnapshot(world: Readonly<WorldState>): void {
     this.world = world;
     const p = world.players[PLAYER_ID]!;
-    if (this.pendingBattle && world.battles[this.pendingBattle] && !this.battle) {
-      this.startBattleView(world, this.pendingBattle);
+    if (this.pendingBattle && world.battles[this.pendingBattle] && !this.battle && !this.cutscene) {
+      const id = this.pendingBattle;
       this.pendingBattle = null;
+      const b = world.battles[id]!;
+      const wild = b.kind === 'wild' && b.wildId ? b.wildId : null;
+      const name = b.state.sides[1].units[0]?.name ?? '絮灵';
+      if (wild && this.explore) this.playCutscene('firstWild', firstWildShots(this.explore, wild, name), () => this.world && this.startBattleView(this.world, id));
+      else this.startBattleView(world, id);
     }
     if (this.battle && (this.pendingTurns.length || this.pendingEnd)) {
       const turns = this.pendingTurns.splice(0);
@@ -271,6 +310,8 @@ export class App {
       overlay.remove();
       this.enterExplore();
       if (this.world) this.explore?.sync(this.world);
+      const island = this.content.islands.get(islandId);
+      if (island && this.explore) this.playCutscene(`arrive:${island.id}`, arrivalShots(this.explore, island), () => {});
     }, 1400);
   }
 
@@ -372,7 +413,8 @@ export class App {
         await this.act({ type: 'encounter', wildId: it.id });
         break;
       case 'keeper':
-        openKeeper(this.ctx, it.id);
+        if (this.explore) this.playCutscene(`keeper:${it.id}`, keeperIntroShots(this.explore, it.id, this.content.keepers.get(it.id)!), () => openKeeper(this.ctx, it.id));
+        else openKeeper(this.ctx, it.id);
         break;
       case 'building':
         openBuilding(this.ctx, it.id);
@@ -455,13 +497,17 @@ export class App {
         if (input.hit('KeyM')) openStarChart(this.ctx);
         if (input.hit('Escape')) openMenu(this.ctx, 'settings');
       }
-      this.hud.update(this.world, this.explore.nearest, 'explore');
+      if (this.mode === 'explore') this.hud.update(this.world, this.explore.nearest, 'explore');
       this.tutorial?.update(this.world, this.explore);
       this.renderer.render(this.explore.scene, this.camera);
     } else if (this.mode === 'build' && this.explore && this.build && this.world) {
       this.explore.update(dt, null, () => {}, false);
       if (!this.ui.capturing) this.build.update(input);
       this.hud.update(this.world, null, 'build');
+      this.renderer.render(this.explore.scene, this.camera);
+    } else if (this.mode === 'cutscene' && this.explore && this.cutscene) {
+      this.explore.update(dt, null, () => {}, false);
+      this.cutscene.update(dt, this.camera);
       this.renderer.render(this.explore.scene, this.camera);
     } else if (this.mode === 'battle' && this.battle) {
       this.battle.update(dt);

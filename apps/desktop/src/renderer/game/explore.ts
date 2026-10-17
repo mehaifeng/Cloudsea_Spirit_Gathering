@@ -31,6 +31,8 @@ import {
   lookFromSpirit,
   makeBuildingView,
   makeGatherProp,
+  makeSkiff,
+  type SkiffView,
   mat,
   nightFactor,
   type BuildingView,
@@ -93,6 +95,12 @@ export class ExploreView {
   private lastSent = { x: 0, z: 0, yaw: 0 };
   nearest: Interactable | null = null;
   private lastDry = { x: 0, z: 0 };
+  /** 播片期间由播片控制镜头。 */
+  cameraLocked = false;
+  /** 停在码头 / 栈桥边的云舟；家园岛在引导前三步是失事的残骸。 */
+  private skiff: { view: SkiffView; wrecked: boolean } | null = null;
+  /** 失事残骸的位置（开场播片的落点）。 */
+  static readonly WRECK = { x: 5.5, z: 12.5 } as const;
   private interactables: Interactable[] = [];
   /** 额外的交互点（新手引导用）。 */
   extraInteractables: Interactable[] = [];
@@ -170,6 +178,45 @@ export class ExploreView {
     this.scene.add(this.islandMesh);
   }
 
+  private placeSkiff(wrecked: boolean): void {
+    if (this.skiff) this.scene.remove(this.skiff.view.group);
+    const view = makeSkiff({ wrecked });
+    for (const g of view.glows) this.env.glowMaterials.add(g);
+    let x: number;
+    let z: number;
+    let yaw: number;
+    let lift: number;
+    if (wrecked) {
+      ({ x, z } = ExploreView.WRECK);
+      yaw = 0.9;
+      lift = -0.25;
+    } else if (this.isHome) {
+      x = HOME_DOCK.x + 3.3;
+      z = HOME_DOCK.z + 1.6;
+      yaw = 0;
+      lift = 0.4;
+    } else {
+      const a = arrivalPoint(this.island!);
+      x = a.x + 2.1;
+      z = a.z + 2.6;
+      yaw = 0;
+      lift = 0.4;
+    }
+    view.group.position.set(x, Math.max(this.terrain.height(x, z), 0) + lift, z);
+    view.group.rotation.y = yaw;
+    this.scene.add(view.group);
+    this.skiff = { view, wrecked };
+    if (wrecked) this.obstacles.push({ x, z, r: 1.6 });
+  }
+
+  setSkiffVisible(visible: boolean): void {
+    if (this.skiff) this.skiff.view.group.visible = visible;
+  }
+
+  keeperView(id: string): HumanoidView | undefined {
+    return this.keepers.get(id);
+  }
+
   /** 远处的浮岛 = 星图上的其他岛，按世界布局摆在真实的相对位置（DESIGN 3.6，v0.5）。 */
   private addDistantIslands(world: Readonly<WorldState>): void {
     const here = worldPosition(this.island, HOME_CHART_POS);
@@ -219,6 +266,10 @@ export class ExploreView {
     const n = nightFactor(clock.tickOfDay);
     this.env.setNight(n);
     this.player.setNight(n);
+
+    // 云舟：家园岛在引导前三步是残骸（被商队修好之前），之后停在码头边
+    const wantWreck = this.isHome && !c.tutorial.done && c.tutorial.step < 3;
+    if (!this.skiff || this.skiff.wrecked !== wantWreck) this.placeSkiff(wantWreck);
 
     if (this.isHome) {
       const home = world.homes[PLAYER_ID]!;
@@ -494,6 +545,11 @@ export class ExploreView {
       k.update(dt, t, this.ground);
     }
     for (const { view } of this.props.values()) view.update(t);
+    this.skiff?.view.update(t, 0);
+    if (this.skiff?.wrecked && Math.random() < dt * 3) {
+      const g = this.skiff.view.group.position;
+      this.fx.spawn('puff', new THREE.Vector3(g.x, g.y + 1.2, g.z), 1, { size: 0.9, vy: 0.9, life: 2.2, spread: 0.4, color: 0x9a9298 });
+    }
 
     // 镜头
     if (input && controlsEnabled) {
@@ -503,6 +559,12 @@ export class ExploreView {
     }
     const goal = new THREE.Vector3(P.x, this.ground(P.x, P.z) + 1.15, P.z);
     this.camT.lerp(goal, Math.min(1, dt * 6));
+    if (this.cameraLocked) {
+      this.env.update(dt, t, this.camera, this.camT);
+      this.fx.update(dt);
+      this.updateNearest();
+      return;
+    }
     const cp = Math.cos(this.camPitch);
     this.camera.position.set(this.camT.x + Math.sin(this.camYaw) * cp * this.camDist, this.camT.y + Math.sin(this.camPitch) * this.camDist, this.camT.z + Math.cos(this.camYaw) * cp * this.camDist);
     const cth = Math.atan2(this.camera.position.z, this.camera.position.x);
@@ -516,6 +578,11 @@ export class ExploreView {
       e.view.update({ built: e.inst.built, progress: def.buildWork ? e.inst.buildProgress / def.buildWork : 1, crop, working: !!e.inst.job && e.inst.workers.length > 0 }, t);
     }
 
+    this.updateNearest();
+  }
+
+  private updateNearest(): void {
+    const P = this.player;
     // 最近的可交互对象（在面前优先）
     let near: Interactable | null = null;
     let nd = Infinity;
@@ -533,6 +600,14 @@ export class ExploreView {
       }
     }
     this.nearest = near;
+  }
+
+  /** 当前探索镜头的机位（播片结束时回到这里）。 */
+  followPose(): { pos: THREE.Vector3; look: THREE.Vector3 } {
+    const P = this.player;
+    const look = new THREE.Vector3(P.x, this.ground(P.x, P.z) + 1.15, P.z);
+    const cp = Math.cos(this.camPitch);
+    return { pos: new THREE.Vector3(look.x + Math.sin(this.camYaw) * cp * this.camDist, look.y + Math.sin(this.camPitch) * this.camDist, look.z + Math.cos(this.camYaw) * cp * this.camDist), look };
   }
 
   /** 屏幕上一个世界点的位置（标签用）。 */

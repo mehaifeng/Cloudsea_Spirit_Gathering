@@ -13,10 +13,10 @@ import type { UiRoot } from './uiRoot';
 export const STARTER_SPOT = { x: 2.5, z: 4.5 } as const;
 
 const HINTS: Record<number, string> = {
-  0: '你的风帆在云海中失事，坠落到这座荒岛上。<br>用 <b>WASD</b> 走一走，<b>拖动鼠标</b>转动视角。',
+  0: '你的云舟在云海中失事，坠落到这座荒岛上。<br>用 <b>WASD</b> 走一走，<b>拖动鼠标</b>转动视角。',
   1: '岛上有一团温暖的云气在发光。走近它，按 <b>E</b>。',
   2: '小心！',
-  3: '去码头（按 <b>E</b>）打开<b>星图</b>，出航到<b>麦浪坡</b>。<br>靠近野生絮灵按 <b>E</b> 接触，在战斗里用<b>灯露</b>邀请它加入。先打掉它一些体力，成功率更高。',
+  3: '路过的风帆商队帮你修好了云舟。去码头（按 <b>E</b>）打开<b>星图</b>，出航到<b>麦浪坡</b>。<br>靠近野生絮灵按 <b>E</b> 接触，在战斗里用<b>灯露</b>邀请它加入。先打掉它一些体力，成功率更高。',
   4: '回到家园岛，按 <b>B</b> 建一座<b>栖巢</b>。<br>在菜单（<b>Tab</b>）里让一只絮灵离开队伍，再对着建筑按 <b>E</b> 安排它<b>打工</b>——建筑会建得更快。',
   5: '走到岛中央的<b>岛核</b>前按 <b>E</b>，点亮岛上的第一盏灯。',
 };
@@ -43,10 +43,11 @@ export class Tutorial {
       const hint = HINTS[step];
       this.ui.tutorial.classList.toggle('hidden', !hint);
       if (hint) this.ui.tutorial.append(h('div', { class: 'panel', html: `<div class="muted">引导</div>${hint}` }));
-      if (step === 0 && !this.introDone) {
-        this.introDone = true;
-        this.ui.say('……', ['风帆在云海里打转，桅杆断了。', '你抓着提灯，摔在一片柔软的草地上。', '四周很安静。这是一座没有人的小岛。'], '坠落');
-      }
+    }
+    // 开场播片看完后才出坠落对话
+    if (step === 0 && !this.introDone && c.seenCutscenes.includes('opening')) {
+      this.introDone = true;
+      this.ui.say('……', ['云舟的核心熄灭了，船身裂成两半。', '你抓着提灯，摔在一片柔软的草地上。', '四周很安静。这是一座没有人的小岛。'], '坠落');
     }
     if (!view) return;
 

@@ -526,9 +526,9 @@ export function openCore(ctx: Ctx): void {
       body.push(h('div', { class: 'row' }, button(`升级到 ${hm.coreLevel + 1} 级`, () => void doAndRefresh(ctx, { type: 'upgradeCore' }), { class: 'primary' }), h('span', { class: 'muted' }, costText(ctx, cost)), h('span', { class: 'muted' }, '：岛会长大，建筑位 +3，解锁新建筑')));
     }
     body.push(h('h3', {}, '工具'));
-    for (const tool of ['lantern', 'sail', 'gatherTool'] as ToolKind[]) {
+    for (const tool of ['lantern', 'skiff', 'gatherTool'] as ToolKind[]) {
       const lv = c.tools[tool];
-      const desc = tool === 'lantern' ? '能进入的雾浓度上限' : tool === 'sail' ? '能到达的航程' : '每次采集的数量';
+      const desc = tool === 'lantern' ? '能进入的雾浓度上限' : tool === 'skiff' ? '能到达的航程与航行速度' : '每次采集的数量';
       body.push(
         h(
           'div',
@@ -633,7 +633,7 @@ export function openStarChart(ctx: Ctx): void {
     );
     for (const isl of ctx.content.islands.values()) {
       const weather = weatherAt(w.seed, isl.region, w.tick);
-      const blocked = c.tools.lantern < isl.fogLevel ? `需要 ${isl.fogLevel} 级提灯` : c.tools.sail < isl.sailLevel ? `需要 ${isl.sailLevel} 级风帆` : '';
+      const blocked = c.tools.lantern < isl.fogLevel ? `需要 ${isl.fogLevel} 级提灯` : c.tools.skiff < isl.skiffLevel ? `需要 ${isl.skiffLevel} 级云舟` : '';
       const fuel = isl.fogLevel > 0 ? `燃料 ${isl.fogLevel}` : '无雾';
       const keeper = isl.keeper ? ctx.content.keepers.get(isl.keeper)!.name : '';
       place(
