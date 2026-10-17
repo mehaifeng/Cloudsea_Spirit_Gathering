@@ -14,7 +14,7 @@ import { breed } from '../spirit/breeding';
 import { decodeSpiritCode } from '../spirit/code';
 import { generateWildGenes } from '../spirit/genes';
 import { createSpirit, equipSkills, evolve, formOf, MAX_SKILL_SLOTS } from '../spirit/spirit';
-import { startKeeperBattle, startTutorialBattle, startWildBattle, submitBattleActions } from './battleflow';
+import { forfeitBattle, startKeeperBattle, startTutorialBattle, startWildBattle, submitBattleActions } from './battleflow';
 import { homeIslandId } from './create';
 import type { WorldEvent } from './events';
 import {
@@ -44,6 +44,8 @@ export type Intent =
   | { readonly type: 'gather'; readonly nodeId: string }
   | { readonly type: 'encounter'; readonly wildId: string }
   | { readonly type: 'battleActions'; readonly battleId: string; readonly actions: SideActions }
+  /** 认输（守岛人对战等不能逃跑的战斗），按战败结算。 */
+  | { readonly type: 'forfeit'; readonly battleId: string }
   | { readonly type: 'tutorialBattle' }
   | { readonly type: 'adoptStarter' }
   | { readonly type: 'build'; readonly building: string; readonly x: number; readonly z: number; readonly rot: Rotation }
@@ -188,6 +190,15 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
     case 'battleActions': {
       const err = submitBattleActions(content, world, playerId, intent.battleId, intent.actions, events);
       return err ? fail(err) : ok();
+    }
+
+    case 'forfeit': {
+      const b = world.battles[intent.battleId];
+      if (!b || b.playerId !== playerId) return fail('没有这场战斗');
+      if (b.kind === 'wild') return fail('野外战斗请用逃跑');
+      if (b.kind === 'scripted') return fail('这一战不能认输');
+      forfeitBattle(content, world, b.id, events);
+      return ok();
     }
 
     case 'adoptStarter': {

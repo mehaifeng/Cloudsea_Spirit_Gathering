@@ -151,7 +151,7 @@ function spiritDetail(ctx: Ctx, id: string): HTMLElement {
     { class: 'col' },
     h('div', { class: 'row' }, spiritTitle(content, s), elementBadges(content, s), h('span', { class: 'tag' }, stateLabel(s))),
     h('div', { class: 'muted' }, `${line.name} · ${form.name}（${['幼絮', '成灵', '云主形'][line.forms.indexOf(form)]}）· 性格 ${nature.name}${nature.up !== nature.down ? `（${STAT_NAME[nature.up]}↑ ${STAT_NAME[nature.down]}↓）` : '（中性）'} · 体型 ${s.genes.sizePercent}% · 花纹 ${{ plain: '素色', spots: '斑点', stripes: '条纹' }[s.genes.pattern]}`),
-    h('div', { class: 'muted' }, `经验 ${s.exp - expForLevel(s.level)} / ${s.level >= 60 ? '—' : expForLevel(s.level + 1) - expForLevel(s.level)}`, s.weary ? `  · 疲惫（还需休息约 ${Math.ceil(s.wearyRemaining / 1200) / 10} 天）` : ''),
+    h('div', { class: 'muted' }, `经验 ${s.exp - expForLevel(s.level)} / ${s.level >= 60 ? '—' : expForLevel(s.level + 1) - expForLevel(s.level)}`, s.weary ? `  · 疲惫：自然恢复还需约 ${Math.ceil(s.wearyRemaining / 1200) / 10} 天；在家园岛上休息更快，喂暖心包立刻恢复` : ''),
     statBlock(content, s),
   );
 

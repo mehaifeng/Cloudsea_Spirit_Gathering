@@ -44,7 +44,7 @@ export class BattleView {
   private readonly tags = new Map<string, HTMLElement>();
   private choices: Record<number, BattleAction> = {};
   private choosingSlot = -1;
-  private sub: 'main' | 'target' | 'switch' | 'dew' = 'main';
+  private sub: 'main' | 'target' | 'switch' | 'dew' | 'forfeit' = 'main';
   private pendingSkill: string | null = null;
   private busy = false;
   private t = 0;
@@ -59,6 +59,8 @@ export class BattleView {
     private world: Readonly<WorldState>,
     private readonly submit: (actions: SideActions) => Promise<{ ok: boolean; error?: string }>,
     private readonly onFinished: () => void,
+    /** 认输（守岛人对战）。 */
+    private readonly forfeit: () => Promise<boolean>,
   ) {
     this.state = battle.state;
     this.env = new Environment(this.scene, { farIslands: true });
@@ -232,7 +234,9 @@ export class BattleView {
       if (bench.length > 0) row.append(button('换人', () => ((this.sub = 'switch'), this.renderPanel())));
       if (this.state.kind === 'wild') {
         row.append(button('灯露', () => ((this.sub = 'dew'), this.renderPanel())));
-        row.append(button('逃跑', () => this.choose({ type: 'flee' })));
+        row.append(button('逃跑', () => this.choose({ type: 'flee' }), { title: '按双方灵巧判定能否逃掉' }));
+      } else if (this.state.kind !== 'scripted') {
+        row.append(button('认输', () => ((this.sub = 'forfeit'), this.renderPanel()), { title: '结束这场对战，按战败处理' }));
       }
       // 被看破的对手：显示它下回合要做什么
       const prepared = this.battle.preparedAi;
@@ -273,6 +277,20 @@ export class BattleView {
       }
       if (row.children.length === 1) row.append(h('span', {}, '背包里没有灯露了'));
       row.append(button('返回', () => this.back()));
+    } else if (this.sub === 'forfeit') {
+      row.append(
+        h('span', {}, '认输会按战败处理：上过场的絮灵会疲惫。'),
+        button('确定认输', async () => {
+          this.busy = true;
+          clear(this.panel);
+          if (!(await this.forfeit())) {
+            this.busy = false;
+            this.sub = 'main';
+            this.renderPanel();
+          }
+        }, { class: 'primary' }),
+        button('继续战斗', () => this.back()),
+      );
     }
     if (this.sub === 'main' && Object.keys(this.choices).length > 0) row.append(button('上一只', () => this.back()));
     this.panel.append(box);
@@ -502,7 +520,7 @@ export class BattleView {
       const s = c.spirits[id];
       if (s) lines.push(h('div', {}, `「${this.content.forms.get(s.formId)!.form.name}」加入了你的${s.state === 'party' ? '队伍' : '家园'}${s.blighted ? '（它被蚀化了，需要在净化池净化）' : ''}`));
     }
-    if (r.result === 'lose') lines.push(h('div', { class: 'muted' }, '参战的絮灵疲惫了，回家在栖巢或温泉休息，或者喂暖心包。'));
+    if (r.result === 'lose') lines.push(h('div', { class: 'muted' }, '参战的絮灵疲惫了，暂时不能出战。回到家园岛就会慢慢恢复（有栖巢快一倍、有温泉快四倍），或者喂暖心包立刻恢复——码头的商队有卖。'));
     if (r.rescued) lines.push(h('div', { class: 'muted' }, '路过的风帆商队把你送回了家园岛。'));
     const box = h('div', { class: 'panel', style: 'width:min(560px,94vw)' }, h('h2', {}, title), ...lines, h('div', { class: 'row', style: 'margin-top:10px' }, button('继续', () => this.onFinished(), { class: 'primary' })));
     this.panel.append(box);

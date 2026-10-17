@@ -208,6 +208,24 @@ test('新手引导与核心循环', async () => {
   await win.screenshot({ path: 'screenshots/15-keeper-talk.png' });
   await closeDialogues(win);
 
+  // 守岛人对战：可以认输（Lynx 反馈）
+  await win.keyboard.press('KeyE');
+  await win.waitForTimeout(300);
+  await win.locator('#modal .btn', { hasText: '比一场' }).click();
+  await win.waitForTimeout(500);
+  await closeDialogues(win);
+  await win.waitForTimeout(1200);
+  expect(await g(win, 'g.mode()')).toBe('battle');
+  await win.locator('#battle-ui .btn', { hasText: /^认输$/ }).click();
+  await win.waitForTimeout(200);
+  await win.screenshot({ path: 'screenshots/15b-keeper-forfeit.png' });
+  await win.locator('#battle-ui .btn', { hasText: '确定认输' }).click();
+  await win.waitForTimeout(800);
+  await closeDialogues(win);
+  await win.locator('#battle-ui .btn', { hasText: /^继续$/ }).click();
+  await win.waitForTimeout(500);
+  expect(await g(win, 'g.mode()')).toBe('explore');
+
   // 存档 → 回到标题 → 继续：位置、絮灵、建筑都还在
   const before = await g<{ spirits: number; buildings: number; shells: number; island: string }>(
     win,

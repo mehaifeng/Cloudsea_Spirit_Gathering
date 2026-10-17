@@ -274,6 +274,50 @@ describe('战斗与捕获', () => {
     expect(c.spirits[id]!.weary).toBe(false);
   });
 
+  it('Lynx 反馈：队伍里疲惫的絮灵回到家园岛就按栖巢倍速恢复；出门在外是自然速度', () => {
+    const w = newGame();
+    act(w, { type: 'adoptStarter' });
+    const c = w.characters['p1']!;
+    const id = c.party[0]!;
+    // 先建好一座栖巢
+    w.homes['p1']!.buildings['n1'] = { id: 'n1', type: 'nest', x: 3, z: -5, rot: 0, built: true, buildProgress: 600, workers: [], crop: null, job: null, eggId: null, occupants: [] };
+    c.spirits[id] = { ...c.spirits[id]!, weary: true, wearyRemaining: TICKS_PER_DAY };
+    run(w, TICKS_PER_DAY / 2 + 20);
+    expect(c.spirits[id]!.weary).toBe(false);
+    act(w, { type: 'sail', islandId: 'wheatSlope' });
+    c.spirits[id] = { ...c.spirits[id]!, weary: true, wearyRemaining: TICKS_PER_DAY };
+    run(w, TICKS_PER_DAY / 2 + 20);
+    expect(c.spirits[id]!.weary).toBe(true);
+  });
+
+  it('Lynx 反馈：暖心包可以在码头的商队买到', () => {
+    const w = newGame();
+    act(w, { type: 'buy', item: 'warmBun', count: 1 });
+    expect(w.characters['p1']!.backpack['warmBun']).toBe(1);
+  });
+
+  it('Lynx 反馈：守岛人对战可以认输（按战败结算）；野外战斗只能逃跑', () => {
+    const w = newGame();
+    act(w, { type: 'adoptStarter' });
+    w.characters['p1']!.backpack['lanternFuel'] = 1;
+    act(w, { type: 'sail', islandId: 'bellTerrace' });
+    act(w, { type: 'challenge', keeperId: 'lan' });
+    const battleId = w.players['p1']!.battleId!;
+    const r = act(w, { type: 'forfeit', battleId });
+    expect(r.events.find((e) => e.t === 'battleEnd')).toMatchObject({ result: 'lose' });
+    expect(w.players['p1']!.battleId).toBeNull();
+    const c = w.characters['p1']!;
+    expect(c.spirits[c.party[0]!]!.weary).toBe(true);
+
+    const w2 = newGame(3);
+    act(w2, { type: 'adoptStarter' });
+    act(w2, { type: 'sail', islandId: 'wheatSlope' });
+    const wild = Object.values(w2.islands['wheatSlope']!.wild)[0]!;
+    act(w2, { type: 'move', x: wild.x, z: wild.z + 1, yaw: 0 });
+    act(w2, { type: 'encounter', wildId: wild.id });
+    expect(applyIntent(content, w2, 'p1', { type: 'forfeit', battleId: w2.players['p1']!.battleId! }).error).toBe('野外战斗请用逃跑');
+  });
+
   it('新手引导战斗：1v1，脚本保证不会战败', () => {
     const w = newGame();
     act(w, { type: 'adoptStarter' });

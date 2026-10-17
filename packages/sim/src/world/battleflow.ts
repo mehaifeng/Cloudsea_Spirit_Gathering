@@ -18,6 +18,8 @@ import type { ActiveBattle, CharacterState, WorldState } from './state';
 import { dayOf, TICKS_PER_DAY } from './time';
 import { weatherAt } from './weather';
 
+export const NO_READY_SPIRITS = '队伍里的絮灵都疲惫了：回家园岛休息（有栖巢快一倍），或喂暖心包立刻恢复（码头商队有卖）';
+
 /** 能出战的队伍成员：不疲惫、未蚀化、不在净化或蛋里。 */
 export function battleReady(c: CharacterState): Spirit[] {
   return c.party.map((id) => c.spirits[id]!).filter((s) => s && !s.weary && !s.blighted && s.state === 'party');
@@ -45,7 +47,7 @@ export function startWildBattle(content: ContentDb, world: WorldState, playerId:
   if (Math.hypot(wild.x - p.x, wild.z - p.z) > 5) return '再靠近一点';
   if (Object.values(world.battles).some((b) => b.wildId === wildId)) return '它正在和别人战斗';
   const ready = battleReady(c);
-  if (ready.length === 0) return '队伍里没有能出战的絮灵';
+  if (ready.length === 0) return NO_READY_SPIRITS;
   markSeen(c, wild.group.map((s) => s.formId));
   const id = newId(world, 'b');
   const seed = deriveSeed(world.seed, `battle:${id}`);
@@ -81,7 +83,7 @@ export function startKeeperBattle(content: ContentDb, world: WorldState, playerI
   const blocker = keeperBattleBlocker(world, k, playerId);
   if (blocker) return blocker;
   const ready = battleReady(c);
-  if (ready.length === 0) return '队伍里没有能出战的絮灵';
+  if (ready.length === 0) return NO_READY_SPIRITS;
   k.lastBattleDay[playerId] = dayOf(world.tick);
   markSeen(c, k.spirits.map((s) => s.formId));
   const level = affinityLevel(keeperAffinity(k, playerId));

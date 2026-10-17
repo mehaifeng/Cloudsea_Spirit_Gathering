@@ -296,6 +296,7 @@ export class App {
         this.enterExplore();
         if (this.world) this.explore?.sync(this.world);
       },
+      () => this.act({ type: 'forfeit', battleId }),
     );
   }
 

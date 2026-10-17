@@ -2,6 +2,7 @@ import { ECONOMY, ORDER_PREMIUM, ORDER_TEMPLATES, type ContentDb } from '@clouds
 import { createRng, deriveSeed } from '../rng';
 import type { Spirit } from '../spirit/types';
 import type { WorldEvent } from './events';
+import { homeIslandId } from './create';
 import { hasRoomForSpirit, tickHome } from './home';
 import { newId } from './ids';
 import { planKeeperDay } from './keeper';
@@ -32,14 +33,18 @@ function dailyUpdate(content: ContentDb, world: WorldState, day: number, events:
   for (const k of Object.values(world.keepers)) planKeeperDay(content, world, k, events);
 }
 
-/** 疲惫恢复倍速：在家空闲时栖巢 2×、温泉 4×；出门在外 1×（DESIGN 4.8）。 */
+/**
+ * 疲惫恢复倍速（DESIGN 4.8）：在家园岛上休息时，有温泉 4×、有栖巢 2×；出门在外 1×。
+ * “在家”= 空闲的絮灵，或主人此刻就在家园岛上时队伍里的絮灵（D52）；工作中的絮灵按自然速度。
+ */
 function recoveryRate(content: ContentDb, world: WorldState, c: CharacterState, s: Spirit): number {
-  if (s.state === 'party' || s.state === 'egg' || s.state === 'purifying') return 1;
+  if (s.state === 'egg' || s.state === 'purifying' || s.state === 'working') return 1;
+  const atHome = s.state === 'idle' || world.players[c.id]?.islandId === homeIslandId(c.id);
   const home = world.homes[c.id];
-  if (!home) return 1;
+  if (!atHome || !home) return 1;
   const kinds = new Set(Object.values(home.buildings).filter((b) => b.built).map((b) => content.buildings.get(b.type)!.kind));
   if (kinds.has('hotSpring')) return 4;
-  if (kinds.has('nest') && s.state === 'idle') return 2;
+  if (kinds.has('nest')) return 2;
   return 1;
 }
 
