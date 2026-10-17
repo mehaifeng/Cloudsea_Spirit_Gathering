@@ -51,9 +51,22 @@ export class HumanoidView {
   lookAt: { x: number; z: number } | null = null;
   /** 挥手动作计时。 */
   private wave = 0;
-  /** 跳跃：离地高度、竖直速度、起跳前的蓄力计时、下蹲弹簧（负值 = 蹲下）。 */
-  private airY = 0;
+  /**
+   * 跳跃与落差（v0.6 用绝对高度）：脚底的世界高度、竖直速度、是否着地、起跳初速度、
+   * 起跳前的蓄力计时、下蹲弹簧（负值 = 蹲下）。走出台沿会自然下落，跳到更高的面上会落在上面。
+   */
+  private footY = 0;
   private vy = 0;
+  private grounded = true;
+  private jumpV = 4.4;
+  private lastFloor = 0;
+  private placed = false;
+  /** 水（v0.6）：所在位置的水面高度与水深（由控制器每帧给出；没有水时 depth = 0）。 */
+  water = { y: 0, depth: 0 };
+  /** 游泳混合 0..1（深水自动切换，平滑过渡）。 */
+  swim = 0;
+  /** 踉跄 0..1（云舟迫降时随船身摇晃），自动衰减。 */
+  stagger = 0;
   private jumpDelay = 0;
   private crouch = 0;
   private crouchV = 0;
@@ -168,10 +181,32 @@ export class HumanoidView {
     }
   }
 
-  setPosition(x: number, z: number, yaw: number): void {
+  /** 放到某处；给 y 时脚底放在这个高度（例如甲板上），否则落在地面。 */
+  setPosition(x: number, z: number, yaw: number, y?: number): void {
     this.x = x;
     this.z = z;
     this.yaw = this.prevYaw = yaw;
+    if (y === undefined) this.placed = false;
+    else {
+      this.placed = true;
+      this.footY = this.lastFloor = y;
+      this.grounded = true;
+      this.vy = 0;
+    }
+  }
+
+  /** 游泳时水深的阈值：超过就游，低于就涉水走。 */
+  static readonly SWIM_DEPTH = 1.0;
+  /** 游泳时脚底在水面下多深（头和肩露出水面）。 */
+  private static readonly SWIM_SINK = 0.95;
+
+  get swimming(): boolean {
+    return this.swim > 0.5;
+  }
+
+  /** 脚底的世界高度。 */
+  get feetY(): number {
+    return this.footY;
   }
 
   /** 夜里提灯亮度 0..1。 */
@@ -185,24 +220,25 @@ export class HumanoidView {
   }
 
   get airborne(): boolean {
-    return this.airY > 0.001 || this.jumpDelay > 0;
+    return !this.grounded || this.jumpDelay > 0;
   }
 
   get busy(): boolean {
     return this.action !== null;
   }
 
-  /** 跳：站立、行走、奔跑中都能跳（水平速度由控制器保持）。返回是否起跳。 */
-  jump(): boolean {
-    if (this.airborne || this.action) return false;
+  /** 跳：站立、行走、奔跑中都能跳（水平速度由控制器保持）；游泳时不能跳。返回是否起跳。 */
+  jump(strength = 4.4): boolean {
+    if (this.airborne || this.action || this.swim > 0.3) return false;
     this.jumpDelay = 0.07;
+    this.jumpV = strength;
     this.crouchV -= 2.2;
     return true;
   }
 
   /** 做一个采集动作；onImpact 在工具落下的那一刻调用。 */
   playAction(kind: ActionKind, onImpact: () => void): boolean {
-    if (this.action || this.airborne) return false;
+    if (this.action || this.airborne || this.swim > 0.3) return false;
     this.action = { kind, t: 0, onImpact };
     this.showTool(kind);
     return true;
@@ -254,28 +290,50 @@ export class HumanoidView {
   /** 由控制器给出位置 / 朝向 / 速度后，算出姿态。 */
   update(dt: number, t: number, ground: (x: number, z: number) => number): void {
     const gy = ground(this.x, this.z);
-    // 跳跃：蓄力 → 起跳 → 重力 → 落地缓冲（弹簧）
+    // 水：深水游泳（浮在水面），浅水照常走；切换平滑
+    const deep = this.water.depth > HumanoidView.SWIM_DEPTH && this.grounded;
+    this.swim = clamp(this.swim + (deep ? dt * 3 : -dt * 3), 0, 1);
+    const floatY = this.water.y - HumanoidView.SWIM_SINK;
+    const floor = this.swim > 0 ? lerp(gy, Math.max(gy, floatY), smoothK(this.swim, 0, 1)) : gy;
+    if (!this.placed) {
+      this.footY = floor;
+      this.lastFloor = floor;
+      this.grounded = true;
+      this.vy = 0;
+      this.placed = true;
+    }
+    // 跳跃：蓄力 → 起跳 → 重力 → 落地缓冲（弹簧）；走出台沿 → 下落
     if (this.jumpDelay > 0) {
       this.jumpDelay -= dt;
       if (this.jumpDelay <= 0) {
         this.jumpDelay = 0;
-        this.vy = 4.4;
-        this.airY = 0.001;
+        this.vy = this.jumpV;
+        this.grounded = false;
       }
     }
-    if (this.airY > 0) {
+    if (this.grounded && floor < this.footY - 0.35) {
+      this.grounded = false;
+      this.vy = 0;
+    }
+    if (!this.grounded) {
       this.vy -= 13 * dt;
-      this.airY += this.vy * dt;
-      if (this.airY <= 0) {
-        this.airY = 0;
+      this.footY += this.vy * dt;
+      if (this.footY <= floor && this.vy <= 0) {
+        this.footY = floor;
+        this.grounded = true;
         this.crouchV -= Math.min(4, Math.abs(this.vy) * 0.55);
         this.vy = 0;
       }
+    } else {
+      // 小台阶直接踩上去；游泳切换时平滑过渡
+      this.footY = Math.abs(floor - this.lastFloor) < 0.5 ? floor : lerp(this.footY, floor, Math.min(1, dt * 12));
     }
+    this.lastFloor = floor;
+    const airH = Math.max(0, this.footY - floor);
     this.crouchV += (-90 * this.crouch - 11 * this.crouchV) * dt;
     this.crouch = clamp(this.crouch + this.crouchV * dt, -0.28, 0.08);
-    const inAir = this.airY > 0.02;
-    this.group.position.set(this.x, gy + this.airY, this.z);
+    const inAir = airH > 0.02 && !this.grounded;
+    this.group.position.set(this.x, this.footY, this.z);
     this.group.rotation.y = this.yaw;
     const B = this.B;
     const w = clamp(this.speed / 1.4, 0, 1);
@@ -290,7 +348,7 @@ export class HumanoidView {
       const lz = gf[0] * w;
       const wx = this.x + lx * cy + lz * sy;
       const wz = this.z - lx * sy + lz * cy;
-      feet.push({ L, lx, lz, y: ground(wx, wz) - gy, lift: gf[1] * w });
+      feet.push({ L, lx, lz, y: ground(wx, wz) - this.footY, lift: gf[1] * w });
     }
     // 动作进度
     const act = this.action;
@@ -313,7 +371,7 @@ export class HumanoidView {
     B['hips']!.position.y = hipsY;
     for (const f of feet) {
       // 空中收腿；地面上按步态踩地
-      const target = inAir ? { x: f.lx, y: Math.max(hipsY - 0.62, -this.airY + 0.06), z: f.L === 'L' ? 0.1 : -0.05 } : { x: f.lx, y: f.y + 0.06 + f.lift, z: f.lz };
+      const target = inAir ? { x: f.lx, y: Math.max(hipsY - 0.62, -airH + 0.06), z: f.L === 'L' ? 0.1 : -0.05 } : { x: f.lx, y: f.y + 0.06 + f.lift, z: f.lz };
       solveLeg(B[`th${f.L}`]!, B[`sh${f.L}`]!, B[`ft${f.L}`]!, { x: f.lx, y: hipsY - 0.04, z: 0 }, target, 0.42, 0.4, 1);
     }
     const sw = Math.cos(this.phase * Math.PI * 2);
@@ -350,6 +408,35 @@ export class HumanoidView {
       B['faR']!.rotation.x = -0.4 * reach - 0.2;
       B['uaL']!.rotation.set(-0.5, 0, 0.2);
       B['faL']!.rotation.x = -1.3;
+    }
+    // 游泳：身体前倾、蛙泳划手、腿在后面踢水（与行走姿态按混合度过渡）
+    const sw2 = smoothK(this.swim, 0, 1);
+    if (sw2 > 0.001) {
+      const sp = t * (2.2 + this.speed * 1.4);
+      const stroke = Math.sin(sp);
+      B['hips']!.rotation.x = 0.95 * sw2;
+      B['spine']!.rotation.x = lerp(B['spine']!.rotation.x, -0.25, sw2);
+      for (const [L, s] of [['L', 1], ['R', -1]] as const) {
+        const ua = B[`ua${L}`]!;
+        const fa = B[`fa${L}`]!;
+        ua.rotation.set(lerp(ua.rotation.x, -1.45 + stroke * 0.35, sw2), 0, lerp(ua.rotation.z, s * (0.35 + Math.max(0, -stroke) * 0.7), sw2));
+        fa.rotation.x = lerp(fa.rotation.x, -0.5 - Math.max(0, stroke) * 0.6, sw2);
+        const kick = Math.sin(sp * 2 + (s > 0 ? 0 : Math.PI)) * 0.35;
+        B[`th${L}`]!.rotation.set(lerp(B[`th${L}`]!.rotation.x, 0.15 + kick, sw2), 0, 0);
+        B[`sh${L}`]!.rotation.x = lerp(B[`sh${L}`]!.rotation.x, 0.35 + kick * 0.5, sw2);
+        B[`ft${L}`]!.rotation.x = lerp(B[`ft${L}`]!.rotation.x, 0.9, sw2);
+      }
+    } else B['hips']!.rotation.x = 0;
+    if (this.pivot) this.pivot.visible = this.swim < 0.5 && (this.action === null || this.action.kind === 'pick');
+    // 踉跄：身体随船身左右晃、手臂张开找平衡
+    if (this.stagger > 0.001) {
+      const k = this.stagger;
+      B['spine']!.rotation.z += Math.sin(t * 9) * 0.22 * k;
+      B['spine']!.rotation.x += Math.sin(t * 6.3) * 0.12 * k;
+      B['uaL']!.rotation.set(lerp(B['uaL']!.rotation.x, -0.9, k), 0, lerp(B['uaL']!.rotation.z, 0.9 + Math.sin(t * 11) * 0.3, k));
+      B['uaR']!.rotation.set(lerp(B['uaR']!.rotation.x, -0.9, k), 0, lerp(B['uaR']!.rotation.z, -0.9 - Math.sin(t * 10) * 0.3, k));
+      B['hips']!.position.y -= 0.08 * k;
+      this.stagger = Math.max(0, this.stagger - dt * 0.6);
     }
     let hy = 0;
     if (this.lookAt) {

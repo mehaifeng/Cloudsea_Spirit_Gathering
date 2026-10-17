@@ -124,6 +124,9 @@ export class CreatureView {
   private prevYaw = 0;
   private flash = 0;
   private faint = 0;
+  /** 扑击（战斗出招）：沿朝向的位移偏移，0 → 前扑 → 回到原位；不改位置与朝向（v0.6）。 */
+  private lungeT = -1;
+  private lungeDist = 0;
   /** 移动目标（由控制器设置）。 */
   targetX = 0;
   targetZ = 0;
@@ -339,6 +342,13 @@ export class CreatureView {
     this.sqv = -6;
   }
 
+  /** 战斗出招：向前扑一下再弹回原位（约 0.5 秒）。 */
+  lunge(dist = 1.1): void {
+    this.lungeT = 0;
+    this.lungeDist = dist;
+    this.sqv = -4;
+  }
+
   /** 受击：闪白 + 抖。 */
   hit(): void {
     this.flash = 1;
@@ -370,8 +380,19 @@ export class CreatureView {
     this.speed = lerp(this.speed, want, Math.min(1, dt * 4));
     this.x += Math.sin(this.yaw) * this.speed * dt;
     this.z += Math.cos(this.yaw) * this.speed * dt;
-    const gy = ground(this.x, this.z);
-    this.group.position.set(this.x, gy, this.z);
+    let ox = 0;
+    let oz = 0;
+    if (this.lungeT >= 0) {
+      this.lungeT += dt;
+      const k = this.lungeT / 0.5;
+      // 快速扑出（前 35%）→ 慢慢退回
+      const e = k < 0.35 ? Math.sin((k / 0.35) * (Math.PI / 2)) : k < 1 ? 1 - (k - 0.35) / 0.65 : 0;
+      ox = Math.sin(this.yaw) * this.lungeDist * e * e * (3 - 2 * e);
+      oz = Math.cos(this.yaw) * this.lungeDist * e * e * (3 - 2 * e);
+      if (k >= 1) this.lungeT = -1;
+    }
+    const gy = ground(this.x + ox, this.z + oz);
+    this.group.position.set(this.x + ox, gy, this.z + oz);
     this.group.rotation.y = this.yaw;
 
     // 跳跃与压扁回弹（弹簧）
