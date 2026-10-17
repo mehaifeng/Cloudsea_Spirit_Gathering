@@ -76,7 +76,8 @@ prototype/      M0 单文件原型，只作参考，不再修改
   - 进化段：幼絮 `hatchling` / 成灵 `adult` / 云主形 `lord`；蛋 = `egg`；进化线 = `line`
   - 技能来源：本源 `innateSkill` / 零件 `partSkill` / 技能书 `skillBook`；技能池 `skillPool`，装备栏 `skillSlots`；轻击 `jab`，防御 `guard`
   - 状态异常 = `ailment`（目眩 `dazzled` / 湿透 `soaked` / 失衡 `unbalanced` / 麻痹 `paralyzed` / 迷蒙 `hazed`），增减益层数 = `stage`，暴击 = `crit`，倒下 = `downed`，疲惫 = `weary`
-  - 提灯 = `lantern`（≠ 灯塔 `lighthouse`），风帆 = `sail`，采集工具 = `gatherTool`，燃料 = `fuel`，雾浓度 = `fogLevel`
+  - 提灯 = `lantern`（≠ 灯塔 `lighthouse`），云舟 = `skiff`（v0.5 起取代风帆 `sail`），航行 = `voyage`，采集工具 = `gatherTool`，燃料 = `fuel`，雾浓度 = `fogLevel`
+  - 播片 / 过场 = `cutscene`，镜头时间轴 = `cameraTrack`，细节层级 = `lod`，世界布局 = `worldLayout`
   - 岛核 = `islandCore`，家园岛 = `homeIsland`，漂流岛 = `driftIsle`，守岛人岛 = `keeperIsland`，集市岛 = `marketIsle`，星图 = `starChart`
   - 栖巢 = `nest`，繁殖屋 = `hatchery`，工位 = `workSlot`，蓝图 = `blueprint`，订单 = `order`，商队 = `caravan`
   - 灯露 = `lanternDew`，记忆碎片 = `memoryShard`，图鉴 = `codex`，好感度 = `affinity`，外来（导入）标记 = `foreign`
