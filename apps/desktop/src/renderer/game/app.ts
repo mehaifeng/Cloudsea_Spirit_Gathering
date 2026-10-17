@@ -749,6 +749,7 @@ export class App {
         return P ? { x: P.x, z: P.z, y: P.feetY, yaw: P.yaw, swim: P.swim, swimming: P.swimming, airborne: P.airborne, scripted: this.explore!.scripted } : null;
       },
       battlePositions: () => this.battle?.positions() ?? null,
+      buildCursor: () => this.build?.cursorScreen() ?? null,
       creature: (id: string) => {
         const v = this.explore?.creatureView(id);
         return v ? { x: v.x, z: v.z } : null;

@@ -79,6 +79,20 @@ const SCENES: Record<string, (win: Page) => Promise<void>> = {
     await win.waitForTimeout(1200);
     await shot(win, 'core-b-night');
   },
+  build: async (win) => {
+    // Lynx 反馈：建造模式里预览要对准鼠标（之前因为相机矩阵没刷新，偏得很远）
+    await win.keyboard.press('KeyB');
+    await win.waitForTimeout(400);
+    await win.locator('#build-bar .btn', { hasText: '路灯' }).click();
+    for (const [mx, my] of [[640, 300], [420, 260], [860, 380]] as const) {
+      await win.mouse.move(mx, my);
+      await win.waitForTimeout(300);
+      const c = await g<{ x: number; y: number } | null>(win, 'g.buildCursor()');
+      expect(c).not.toBeNull();
+      expect(Math.hypot(c!.x - mx, c!.y - my), `鼠标 ${mx},${my} → 预览 ${Math.round(c!.x)},${Math.round(c!.y)}`).toBeLessThan(60);
+    }
+    await shot(win, 'build-cursor');
+  },
   dock: async (win) => {
     await win.waitForTimeout(400);
     const p = await g<{ y: number }>(win, 'g.player()');

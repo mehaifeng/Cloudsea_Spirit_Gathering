@@ -108,6 +108,9 @@ export class BuildMode {
     const P = this.view.player;
     this.camera.position.set(P.x + 9, this.view.ground(P.x, P.z) + 12, P.z + 9);
     this.camera.lookAt(P.x, this.view.ground(P.x, P.z), P.z);
+    // 必须先刷新相机矩阵再打射线：探索视图本帧已经把相机转到跟随机位，lookAt 内部用的是旧朝向 + 新位置，
+    // 不刷新的话鼠标射线按错的朝向算，预览与鼠标位置偏得很远（Lynx 反馈）
+    this.camera.updateMatrixWorld(true);
     if (input.hit('Escape') || input.rightClicked) {
       if (this.selected) {
         this.selected = null;
@@ -162,6 +165,13 @@ export class BuildMode {
       if (blocker) this.ui.toast(blocker, 'error');
       else void this.place(this.selected, x, z, this.rot);
     }
+  }
+
+  /** 预览中心在屏幕上的位置（测试用：检查和鼠标对得上）。 */
+  cursorScreen(): { x: number; y: number } | null {
+    if (!this.cursor.visible) return null;
+    const p = this.cursor.position.clone().project(this.camera);
+    return { x: (p.x * 0.5 + 0.5) * innerWidth, y: (-p.y * 0.5 + 0.5) * innerHeight };
   }
 
   dispose(): void {

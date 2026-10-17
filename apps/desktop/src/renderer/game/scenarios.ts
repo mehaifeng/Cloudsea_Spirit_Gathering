@@ -110,6 +110,10 @@ export const SCENARIOS: Record<string, { readonly desc: string; run(h: ScenarioH
       h.advance(0.5);
     },
   },
+  build: {
+    desc: '家园岛，准备进建造模式（检查预览与鼠标对齐）',
+    run: home,
+  },
   dock: {
     desc: '站在码头上，旁边停着云舟',
     run: async (h) => {
