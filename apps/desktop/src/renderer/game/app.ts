@@ -16,6 +16,8 @@ import * as THREE from 'three';
 import { BattleView } from './battle';
 import { Cutscene, type Shot } from './cinematic';
 import { arrivalShots, firstWildShots, keeperIntroShots, openingShots } from './cutscenes';
+import { VoyageView } from './voyageView';
+import { arrivalPoint, HOME_DOCK } from '@cloudsea/sim';
 import { BuildMode } from './build';
 import { ExploreView, type Interactable } from './explore';
 import { Hud } from './hud';
@@ -27,7 +29,7 @@ import { itemName } from './text';
 import { Tutorial } from './tutorial';
 import { UiRoot } from './uiRoot';
 
-type Mode = 'title' | 'explore' | 'build' | 'battle' | 'sailing' | 'cutscene';
+type Mode = 'title' | 'explore' | 'build' | 'battle' | 'sailing' | 'cutscene' | 'voyage';
 
 /** 标题画面背景：一座小岛和几只随机絮灵，镜头慢慢绕。 */
 class TitleScene {
@@ -99,6 +101,12 @@ export class App {
   private pendingEnd: Extract<WorldEvent, { t: 'battleEnd' }> | null = null;
   private titleEl: HTMLElement | null = null;
   private cutscene: Cutscene | null = null;
+  private voyage: VoyageView | null = null;
+  private pendingVoyage: Extract<WorldEvent, { t: 'voyageStart' }> | null = null;
+  private voyageLabel: HTMLElement | null = null;
+  /** 最近一次快照的 tick 与收到时间：快照之间按真实时间外推。 */
+  private snapTick = 0;
+  private snapAt = performance.now();
   private readonly ctx: Ctx;
   /** 自动化测试模式：固定世界种子、打开测试钩子。 */
   private readonly testMode = new URLSearchParams(location.search).get('test') === '1';
@@ -271,7 +279,20 @@ export class App {
 
   private onSnapshot(world: Readonly<WorldState>): void {
     this.world = world;
+    this.snapTick = world.tick;
+    this.snapAt = performance.now();
     const p = world.players[PLAYER_ID]!;
+    // 云舟航行：出发、加速、抵达
+    if (this.pendingVoyage && this.explore && (this.mode === 'explore' || this.mode === 'build')) {
+      const v = this.pendingVoyage;
+      this.pendingVoyage = null;
+      this.startVoyage(world, v);
+    }
+    if (this.voyage) {
+      if (p.voyage) this.voyage.setArrive(p.voyage.arriveTick);
+      else if (p.islandId === this.voyage.dest.islandId) this.finishVoyage(world);
+      return;
+    }
     if (this.pendingBattle && world.battles[this.pendingBattle] && !this.battle && !this.cutscene) {
       const id = this.pendingBattle;
       this.pendingBattle = null;
@@ -299,6 +320,41 @@ export class App {
       this.explore?.sync(world);
       this.build?.setWorld(world);
     }
+  }
+
+  private startVoyage(world: Readonly<WorldState>, v: Extract<WorldEvent, { t: 'voyageStart' }>): void {
+    if (!this.explore) return;
+    this.build?.dispose();
+    this.build = null;
+    this.ui.closeAllModals();
+    const toHome = v.to === homeIslandId(PLAYER_ID);
+    const island = this.content.islands.get(v.to);
+    const landing = toHome ? { x: HOME_DOCK.x, z: HOME_DOCK.z - 2.5 } : arrivalPoint(island!);
+    // 目的岛场景在起飞时就开始搭建（航行途中逐级显示）
+    const dest = new ExploreView(this.content, world, this.camera, v.to, { ...landing, yaw: Math.PI });
+    this.voyage = new VoyageView(this.content, world, this.explore, dest, this.camera, v.departTick, v.arriveTick);
+    this.mode = 'voyage';
+    this.hud.clear();
+    this.ui.tutorial.classList.add('hidden');
+    const name = toHome ? '家园岛' : island?.name ?? '';
+    this.voyageLabel = h('div', { class: 'cine on' }, h('div', { class: 'letterbox top' }), h('div', { class: 'letterbox bottom' }), h('div', { class: 'cine-sub' }, h('span', {}, `云舟起航 · 前往 ${name}`)), h('div', { class: 'cine-skip' }, '空格 加速'));
+    this.ui.layer.append(this.voyageLabel);
+  }
+
+  private finishVoyage(world: Readonly<WorldState>): void {
+    const v = this.voyage!;
+    v.finish();
+    v.dispose();
+    this.explore?.dispose();
+    this.explore = v.dest;
+    this.voyage = null;
+    this.voyageLabel?.remove();
+    this.voyageLabel = null;
+    this.mode = 'explore';
+    this.ui.tutorial.classList.remove('hidden');
+    this.explore.sync(world);
+    const island = this.content.islands.get(this.explore.islandId);
+    if (island) this.playCutscene(`arrive:${island.id}`, arrivalShots(this.explore, island), () => {});
   }
 
   private sailTransition(islandId: string): void {
@@ -360,6 +416,9 @@ export class App {
           break;
         case 'battleStart':
           this.pendingBattle = e.battleId;
+          break;
+        case 'voyageStart':
+          this.pendingVoyage = e;
           break;
         case 'battleTurn':
           this.pendingTurns.push({ battleId: e.battleId, events: e.events });
@@ -473,6 +532,7 @@ export class App {
         this.explore.camDist = dist;
       },
       dialogueOpen: () => this.ui.dialogueOpen,
+      voyageProgress: () => this.voyage?.progress ?? null,
       modalOpen: () => this.ui.modalOpen,
     };
   }
@@ -505,6 +565,11 @@ export class App {
       if (!this.ui.capturing) this.build.update(input);
       this.hud.update(this.world, null, 'build');
       this.renderer.render(this.explore.scene, this.camera);
+    } else if (this.mode === 'voyage' && this.voyage) {
+      if (input.hit('Space') || input.hit('Enter')) void this.act({ type: 'hurryVoyage' });
+      const tick = this.snapTick + ((performance.now() - this.snapAt) / 1000) * 10;
+      this.voyage.update(dt, tick);
+      this.renderer.render(this.voyage.scene, this.camera);
     } else if (this.mode === 'cutscene' && this.explore && this.cutscene) {
       this.explore.update(dt, null, () => {}, false);
       this.cutscene.update(dt, this.camera);

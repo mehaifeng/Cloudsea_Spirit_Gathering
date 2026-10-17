@@ -74,6 +74,8 @@ const HOME_REGION = 'sunPlains' as const;
 /** 一座岛的场景：地形、采集点、建筑、野生絮灵、自家絮灵、守岛人、玩家。 */
 export class ExploreView {
   readonly scene = new THREE.Scene();
+  /** 岛上的一切（地形、建筑、絮灵、玩家、远景岛）；航行时整组挪到世界坐标里（v0.5）。 */
+  readonly root = new THREE.Group();
   readonly env: Environment;
   readonly fx: Fx;
   readonly player: HumanoidView;
@@ -108,26 +110,35 @@ export class ExploreView {
   extraInteractables: Interactable[] = [];
   private t = 0;
 
+  /** 远景岛：岛 id（家园岛用 'home'）→ 模型。航行时目的地的远景会被完整场景替换。 */
+  readonly distant = new Map<string, THREE.Object3D>();
+
   constructor(
     private readonly content: ContentDb,
     world: Readonly<WorldState>,
     private readonly camera: THREE.PerspectiveCamera,
+    /** 指定岛（航行时提前搭建目的地）；省略 = 玩家所在的岛。 */
+    islandId?: string,
+    /** 指定玩家出现的位置（航行目的地的降落点）。 */
+    spawn?: { x: number; z: number; yaw: number },
   ) {
     const p = world.players[PLAYER_ID]!;
-    this.islandId = p.islandId;
-    this.island = content.islands.get(p.islandId) ?? null;
+    this.islandId = islandId ?? p.islandId;
+    this.island = content.islands.get(this.islandId) ?? null;
+    this.scene.add(this.root);
     this.env = new Environment(this.scene, { farIslands: false });
     this.fx = new Fx(this.scene);
     const c = world.characters[PLAYER_ID]!;
     this.player = new HumanoidView({ ...c.appearance, lantern: true }, this.glowTex);
-    this.player.setPosition(p.x, p.z, p.yaw);
-    this.lastDry = { x: p.x, z: p.z };
-    this.scene.add(this.player.group);
+    const at = spawn ?? { x: p.x, z: p.z, yaw: p.yaw };
+    this.player.setPosition(at.x, at.z, at.yaw);
+    this.lastDry = { x: at.x, z: at.z };
+    this.root.add(this.player.group);
     this.lastSent = { x: p.x, z: p.z, yaw: p.yaw };
     this.rebuildTerrain(world);
     this.addDistantIslands(world);
-    this.camT.set(p.x, this.terrain.height(p.x, p.z) + 1.15, p.z);
-    this.camYaw = p.yaw + Math.PI;
+    this.camT.set(at.x, this.terrain.height(at.x, at.z) + 1.15, at.z);
+    this.camYaw = at.yaw + Math.PI;
     this.sync(world);
   }
 
@@ -139,7 +150,7 @@ export class ExploreView {
 
   private rebuildTerrain(world: Readonly<WorldState>): void {
     if (this.islandMesh) {
-      this.scene.remove(this.islandMesh);
+      this.root.remove(this.islandMesh);
     }
     if (this.isHome) {
       const home = world.homes[PLAYER_ID]!;
@@ -161,7 +172,7 @@ export class ExploreView {
           const view = makeGatherProp(node.kind, hashId(node.id));
           view.group.position.set(node.x, this.terrain.height(node.x, node.z) - 0.05, node.z);
           view.group.rotation.y = hashId(node.id) % 6;
-          this.scene.add(view.group);
+          this.root.add(view.group);
           this.props.set(node.id, { node, view });
         }
         // 栈桥：在登岛点
@@ -173,15 +184,15 @@ export class ExploreView {
           pier.add(plank);
         }
         pier.position.set(a.x, this.terrain.height(a.x, a.z), a.z + 1.2);
-        this.scene.add(pier);
+        this.root.add(pier);
         if (this.island!.keeper) this.buildKeeperHome(this.island!.keeper);
       }
     }
-    this.scene.add(this.islandMesh);
+    this.root.add(this.islandMesh);
   }
 
   private placeSkiff(wrecked: boolean): void {
-    if (this.skiff) this.scene.remove(this.skiff.view.group);
+    if (this.skiff) this.root.remove(this.skiff.view.group);
     const view = makeSkiff({ wrecked });
     for (const g of view.glows) this.env.glowMaterials.add(g);
     let x: number;
@@ -206,9 +217,22 @@ export class ExploreView {
     }
     view.group.position.set(x, Math.max(this.terrain.height(x, z), 0) + lift, z);
     view.group.rotation.y = yaw;
-    this.scene.add(view.group);
+    this.root.add(view.group);
     this.skiff = { view, wrecked };
     if (wrecked) this.obstacles.push({ x, z, r: 1.6 });
+  }
+
+  /** 航行时：藏起岛上的玩家与跟随的队伍絮灵、停着的云舟（它们在飞行的云舟上）。 */
+  setTravelling(travelling: boolean): void {
+    this.player.group.visible = !travelling;
+    for (const e of this.creatures.values()) if (e.kind === 'own' && e.state === 'party') e.view.group.visible = !travelling;
+    if (this.skiff && !this.skiff.wrecked) this.skiff.view.group.visible = !travelling;
+  }
+
+  /** 云舟停泊处（本岛局部坐标），航行的起点 / 终点。 */
+  berth(): { x: number; y: number; z: number } {
+    const g = this.skiff?.view.group.position;
+    return g ? { x: g.x, y: g.y, z: g.z } : { x: 0, y: 0, z: 0 };
   }
 
   setSkiffVisible(visible: boolean): void {
@@ -222,22 +246,23 @@ export class ExploreView {
   /** 远处的浮岛 = 星图上的其他岛，按世界布局摆在真实的相对位置（DESIGN 3.6，v0.5）。 */
   private addDistantIslands(world: Readonly<WorldState>): void {
     const here = worldPosition(this.island, HOME_CHART_POS);
-    const place = (terrain: Terrain, pos: { x: number; y: number; z: number }, seed: number) => {
+    const place = (key: string, terrain: Terrain, pos: { x: number; y: number; z: number }, seed: number) => {
       const dx = pos.x - here.x;
       const dz = pos.z - here.z;
       const dist = Math.hypot(dx, dz);
       if (dist < 1) return;
       const lod = buildIslandLod(terrain, dist < 260 ? 'mid' : 'far', seed);
       lod.position.set(dx, pos.y - here.y, dz);
-      this.scene.add(lod);
+      this.root.add(lod);
+      this.distant.set(key, lod);
     };
     for (const isl of this.content.islands.values()) {
       if (isl.id === this.islandId) continue;
-      place(islandTerrain(isl), worldPosition(isl, HOME_CHART_POS), isl.seed);
+      place(isl.id, islandTerrain(isl), worldPosition(isl, HOME_CHART_POS), isl.seed);
     }
     if (!this.isHome) {
       const home = world.homes[PLAYER_ID]!;
-      place(homeTerrain(home.seed, home.coreLevel), { x: 0, y: 0, z: 0 }, home.seed);
+      place('home', homeTerrain(home.seed, home.coreLevel), { x: 0, y: 0, z: 0 }, home.seed);
     }
   }
 
@@ -252,7 +277,7 @@ export class ExploreView {
       v.group.position.set(x, this.terrain.height(x, z), z);
       v.update({ built: true, progress: 1, crop: type === 'field' ? { id: 'sunWheat', growth: 0.6 + (Math.abs(x) % 1) * 0.4 } : null, working: true }, 0);
       for (const g of v.glows) this.env.glowMaterials.add(g);
-      this.scene.add(v.group);
+      this.root.add(v.group);
       this.obstacles.push({ x, z, r: Math.max(0.4, Math.min(w, d) / 2 + 0.2) });
     }
   }
@@ -315,13 +340,13 @@ export class ExploreView {
         const def = this.content.keepers.get(kid)!;
         const v = new HumanoidView({ ...def.appearance });
         v.setPosition(base.x, base.z, Math.PI);
-        this.scene.add(v.group);
+        this.root.add(v.group);
         this.keepers.set(kid, v);
       }
     }
     for (const [kid, v] of this.keepers) {
       if (!keeperIds.includes(kid)) {
-        this.scene.remove(v.group);
+        this.root.remove(v.group);
         v.dispose();
         this.keepers.delete(kid);
       }
@@ -331,7 +356,7 @@ export class ExploreView {
       const w = want.get(id);
       const stale = !w || (w.kind === 'own' && (w.spirit.blighted !== entry.view.look.blighted || lookKey(this.content, w.spirit) !== lookKeyOf(entry.view)));
       if (stale) {
-        this.scene.remove(entry.view.group);
+        this.root.remove(entry.view.group);
         entry.view.dispose();
         this.creatures.delete(id);
       } else if (w) entry.state = w.spirit.state;
@@ -347,7 +372,7 @@ export class ExploreView {
       const spawnX = w.kind === 'own' && c.party.includes(w.spirit.id) ? this.player.x + (Math.random() - 0.5) * 2 : w.x;
       const spawnZ = w.kind === 'own' && c.party.includes(w.spirit.id) ? this.player.z - 1 : w.z;
       view.setPosition(spawnX, spawnZ, Math.random() * 6);
-      this.scene.add(view.group);
+      this.root.add(view.group);
       this.creatures.set(id, { view, home: { x: w.x, z: w.z }, kind: w.kind, timer: Math.random() * 3, state: w.spirit.state });
     }
 
@@ -397,14 +422,14 @@ export class ExploreView {
       let entry = this.buildings.get(inst.id);
       if (!entry || entry.key !== key) {
         if (entry) {
-          this.scene.remove(entry.view.group);
-          if (entry.foundation) this.scene.remove(entry.foundation);
+          this.root.remove(entry.view.group);
+          if (entry.foundation) this.root.remove(entry.foundation);
         }
         const view = makeBuildingView(inst.type, def.size.w, def.size.d, hashId(inst.id));
         const y = foundationHeight(this.content, home, inst);
         view.group.position.set(inst.x + fp.w / 2, y, inst.z + fp.d / 2);
         view.group.rotation.y = -inst.rot * (Math.PI / 2);
-        this.scene.add(view.group);
+        this.root.add(view.group);
         for (const g of view.glows) this.env.glowMaterials.add(g);
         // 地基：建筑占地四角的最高点，石砌填到地形（DESIGN 7）
         const low = Math.min(this.terrain.height(inst.x, inst.z), this.terrain.height(inst.x + fp.w, inst.z), this.terrain.height(inst.x, inst.z + fp.d), this.terrain.height(inst.x + fp.w, inst.z + fp.d));
@@ -413,7 +438,7 @@ export class ExploreView {
           foundation = new THREE.Mesh(new THREE.BoxGeometry(fp.w, y - low + 0.2, fp.d), mat(0xa49a90));
           foundation.position.set(inst.x + fp.w / 2, (y + low) / 2 - 0.1, inst.z + fp.d / 2);
           foundation.receiveShadow = true;
-          this.scene.add(foundation);
+          this.root.add(foundation);
         }
         entry = { view, key, inst, foundation };
         this.buildings.set(inst.id, entry);
@@ -428,8 +453,8 @@ export class ExploreView {
     }
     for (const [id, e] of this.buildings) {
       if (seen.has(id)) continue;
-      this.scene.remove(e.view.group);
-      if (e.foundation) this.scene.remove(e.foundation);
+      this.root.remove(e.view.group);
+      if (e.foundation) this.root.remove(e.foundation);
       this.buildings.delete(id);
     }
   }

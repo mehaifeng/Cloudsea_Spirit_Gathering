@@ -57,11 +57,26 @@ async function fight(win: Page, prefer: RegExp[], capture = false): Promise<void
   await win.waitForTimeout(500);
 }
 
-async function sail(win: Page, islandId: string, shot?: string): Promise<void> {
+/** 出航：云舟沿航线飞过去（v0.5）；可截航行中的画面，然后按空格加速，等降落。 */
+async function sail(win: Page, islandId: string, shot?: string, voyageShots?: string[]): Promise<void> {
   const r = await g<{ ok: boolean; error?: string }>(win, `g.act({ type: 'sail', islandId: '${islandId}' })`);
   expect(r.ok, r.error).toBe(true);
-  await win.waitForTimeout(1900);
+  for (let i = 0; i < 30 && (await g<string>(win, 'g.mode()')) !== 'voyage'; i++) await win.waitForTimeout(100);
+  expect(await g<string>(win, 'g.mode()')).toBe('voyage');
+  for (const path of voyageShots ?? []) {
+    await win.waitForTimeout(1800);
+    await win.screenshot({ path });
+  }
+  await win.keyboard.press('Space');
+  const target = islandId === 'home' ? 'home:p1' : islandId;
+  for (let i = 0; i < 80; i++) {
+    const done = await g<boolean>(win, `g.mode() !== 'voyage' && g.world().players.p1.islandId === '${target}'`);
+    if (done) break;
+    await win.waitForTimeout(150);
+  }
+  expect(await g<string>(win, 'g.world().players.p1.islandId')).toBe(target);
   if (islandId !== 'home') await skipCutscene(win, shot);
+  await win.waitForTimeout(300);
 }
 
 async function gatherAll(win: Page, kinds: string[]): Promise<number> {
@@ -126,7 +141,7 @@ test('新手引导与核心循环', async () => {
   expect(await g(win, 'g.world().characters.p1.tutorial.step')).toBe(3);
 
   // 3 出航、捕获
-  await sail(win, 'wheatSlope', 'screenshots/05a-arrival.png');
+  await sail(win, 'wheatSlope', 'screenshots/05a-arrival.png', ['screenshots/04a-voyage-depart.png', 'screenshots/04b-voyage-cruise.png']);
   await win.screenshot({ path: 'screenshots/05-wheat-slope.png' });
 
   // 动作：对着树按 E 砍树（斧子），空格起跳（v0.5）
