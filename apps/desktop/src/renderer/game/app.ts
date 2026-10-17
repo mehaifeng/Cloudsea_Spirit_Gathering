@@ -36,7 +36,7 @@ import { Tutorial } from './tutorial';
 import { UiRoot } from './uiRoot';
 
 /** boarding / landing：上下船表演；transition：探索 → 战斗的转场（v0.6）。 */
-type Mode = 'title' | 'explore' | 'build' | 'battle' | 'sailing' | 'cutscene' | 'voyage' | 'boarding' | 'landing' | 'transition';
+type Mode = 'title' | 'explore' | 'build' | 'battle' | 'sailing' | 'cutscene' | 'voyage' | 'boarding' | 'landing' | 'transition' | 'gallery';
 
 /** 标题画面背景：一座小岛和几只随机絮灵，镜头慢慢绕。 */
 class TitleScene {
@@ -904,6 +904,8 @@ export class App {
       },
       battlePositions: () => this.battle?.positions() ?? null,
       buildCursor: () => this.build?.cursorScreen() ?? null,
+      /** 图鉴陈列（测试）：40 个形态排成方阵，page 0 / 1 各一半。 */
+      gallery: (page: number) => this.showGallery(page),
       creature: (id: string) => {
         const v = this.explore?.creatureView(id);
         return v ? { x: v.x, z: v.z } : null;
@@ -967,7 +969,53 @@ export class App {
     }
   }
 
+  private gallery: { scene: THREE.Scene; env: Environment; views: CreatureView[]; t: number } | null = null;
+
+  /** 图鉴陈列（测试 / 自查用）：所有形态按编号排成方阵，每只带名字。 */
+  private showGallery(page: number): void {
+    this.titleEl?.remove();
+    this.titleEl = null;
+    this.gallery?.views.forEach((v) => v.dispose());
+    const scene = new THREE.Scene();
+    const env = new Environment(scene, { farIslands: false });
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(30, 32).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xb8d48a, flatShading: true }));
+    scene.add(ground);
+    const forms = [...this.content.forms.values()].sort((a, b) => a.form.no - b.form.no).slice(page * 20, page * 20 + 20);
+    const rng = createRng(77);
+    const views: CreatureView[] = [];
+    const labels = h('div', { id: 'gallery-labels' });
+    this.ui.layer.querySelector('#gallery-labels')?.remove();
+    this.ui.layer.append(labels);
+    forms.forEach((f, i) => {
+      const s = createSpirit(this.content, { id: `g-${f.form.id}`, ownerId: 'g', genes: generateWildGenes(rng, f.line), level: 40, formIndex: f.index });
+      const v = new CreatureView(lookFromSpirit(this.content, s));
+      const x = ((i % 5) - 2) * 3.6;
+      const z = (Math.floor(i / 5) - 1.5) * 3.4;
+      v.setPosition(x, z, 0.3);
+      scene.add(v.group);
+      views.push(v);
+      labels.append(h('div', { class: 'nameplate', 'data-x': String(x), 'data-z': String(z) }, `${f.form.no} ${f.form.name}`));
+    });
+    this.gallery = { scene, env, views, t: 0 };
+    this.mode = 'gallery';
+    this.camera.position.set(0, 13, 15);
+    this.camera.lookAt(0, 0, 0.8);
+    this.camera.updateMatrixWorld(true);
+    for (const el of labels.children) {
+      const p = new THREE.Vector3(Number((el as HTMLElement).dataset['x']), 0, Number((el as HTMLElement).dataset['z']) + 1.3).project(this.camera);
+      (el as HTMLElement).style.transform = `translate(${(p.x * 0.5 + 0.5) * innerWidth}px, ${(-p.y * 0.5 + 0.5) * innerHeight}px) translate(-50%, 0)`;
+    }
+  }
+
   private render(): void {
+    if (this.mode === 'gallery' && this.gallery) {
+      const gl = this.gallery;
+      gl.t += 1 / 60;
+      for (const v of gl.views) v.update(1 / 60, gl.t, () => 0);
+      gl.env.update(1 / 60, gl.t, this.camera, new THREE.Vector3());
+      this.renderer.render(gl.scene, this.camera);
+      return;
+    }
     if (this.mode === 'title' && this.title) this.renderer.render(this.title.scene, this.camera);
     else if (this.mode === 'voyage' && this.voyage) this.renderer.render(this.voyage.scene, this.camera);
     else if (this.mode === 'battle' && this.battle) this.renderer.render(this.battle.scene, this.camera);

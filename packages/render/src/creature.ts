@@ -25,19 +25,22 @@ export interface CreatureLook {
   readonly headRatio: number;
   readonly eyeScale: number;
   readonly tailSegments: number;
-  readonly ears: 0 | 1 | 2 | 3;
+  readonly ears: 0 | 1 | 2 | 3 | 4;
   readonly horn: 0 | 1 | 2;
-  readonly wings: boolean;
-  readonly tail: 0 | 1 | 2;
+  /** 0 无 / 1 羽翼 / 2 蛾翼（M3）。 */
+  readonly wings: 0 | 1 | 2;
+  /** 0 无 / 1 绒尾 / 2 鳍尾 / 3 触须尾（M3）。 */
+  readonly tail: 0 | 1 | 2 | 3;
   readonly legs: 0 | 2 | 4 | 6;
   readonly mutated: ReadonlySet<PartSlot>;
   readonly shiny: boolean;
   readonly blighted: boolean;
 }
 
-const EAR_TYPE: Record<string, 1 | 2 | 3> = { pointedEars: 1, floppyEars: 2, roundEars: 3 };
+const EAR_TYPE: Record<string, 1 | 2 | 3 | 4> = { pointedEars: 1, floppyEars: 2, roundEars: 3, antennae: 4 };
 const HORN_TYPE: Record<string, 1 | 2> = { singleHorn: 1, twinHorns: 2 };
-const TAIL_TYPE: Record<string, 1 | 2> = { fluffTail: 1, finTail: 2 };
+const TAIL_TYPE: Record<string, 1 | 2 | 3> = { fluffTail: 1, finTail: 2, tendrilTail: 3 };
+const WING_TYPE: Record<string, 1 | 2> = { featherWings: 1, mothWings: 2 };
 
 function hashString(s: string): number {
   let h = 0x811c9dc5;
@@ -63,7 +66,7 @@ export function lookFromSpirit(content: ContentDb, spirit: Pick<Spirit, 'id' | '
     tailSegments: form.skeleton.tailSegments,
     ears: parts.ears ? EAR_TYPE[parts.ears] ?? 0 : 0,
     horn: parts.horns ? HORN_TYPE[parts.horns] ?? 0 : 0,
-    wings: parts.wings === 'featherWings',
+    wings: parts.wings ? WING_TYPE[parts.wings] ?? 0 : 0,
     tail: parts.tail ? TAIL_TYPE[parts.tail] ?? 0 : 0,
     legs: feet as 0 | 2 | 4 | 6,
     mutated,
@@ -211,6 +214,10 @@ export class CreatureView {
           geo.scale(r * 0.13, r * 0.38, r * 0.2);
           geo.translate(s * r * 0.12, -r * 0.24, 0);
           rig.add(geo, M(ex2, ey2, ez2, 0, 0, s * 0.5), glow('ears', dark), rigid(EA));
+        } else if (g.ears === 4) {
+          // 触角：细杆 + 发光的小球
+          rig.add(new THREE.CylinderGeometry(r * 0.025, r * 0.035, r * 0.6, 4).translate(0, r * 0.3, 0), M(ex2, ey2, ez2, 0.25, 0, -s * 0.35), glow('ears', dark), rigid(EA));
+          rig.add(new THREE.IcosahedronGeometry(r * 0.09, 0).translate(0, r * 0.62, 0), M(ex2, ey2, ez2, 0.25, 0, -s * 0.35), glow('ears', spot), rigid(EA));
         } else {
           rig.add(new THREE.SphereGeometry(1, 8, 5).scale(r * 0.22, r * 0.22, r * 0.08).translate(0, r * 0.17, 0), M(ex2, ey2, ez2, 0, 0, -s * 0.2), ec, rigid(EA));
           rig.add(new THREE.SphereGeometry(1, 7, 4).scale(r * 0.13, r * 0.13, r * 0.05).translate(0, r * 0.17, r * 0.05), M(ex2, ey2, ez2, 0, 0, -s * 0.2), pink, rigid(EA));
@@ -222,11 +229,22 @@ export class CreatureView {
         const wz = -r * 0.15;
         const WB = rig.bone(`wing${s}`, BODY, wx, wy, wz);
         wings.push({ b: WB, s });
-        for (let k = 0; k < 3; k++) {
-          const geo = new THREE.SphereGeometry(1, 7, 4);
-          geo.scale(r * (0.55 - k * 0.09), r * 0.05, r * 0.17);
-          geo.translate(s * r * 0.48, -k * r * 0.05, -k * r * 0.17);
-          rig.add(geo, M(wx, wy, wz, 0, -s * k * 0.22, s * (0.25 + k * 0.12)), glow('wings', belly.clone().lerp(white, 0.4)), rigid(WB));
+        if (g.wings === 2) {
+          // 蛾翼：前后两片圆阔的翅膀，带一个斑点
+          for (const [k, len, tilt] of [[0, 0.75, 0.15], [1, 0.55, -0.35]] as const) {
+            const geo = new THREE.SphereGeometry(1, 8, 4);
+            geo.scale(r * len, r * 0.03, r * 0.42);
+            geo.translate(s * r * len * 0.9, 0, -k * r * 0.35);
+            rig.add(geo, M(wx, wy, wz, 0, s * tilt, s * 0.2), glow('wings', k ? dark : base.clone().lerp(belly, 0.3)), rigid(WB));
+            rig.add(new THREE.SphereGeometry(1, 6, 3).scale(r * 0.14, r * 0.035, r * 0.14).translate(s * r * len * 1.1, r * 0.01, -k * r * 0.35), M(wx, wy, wz, 0, s * tilt, s * 0.2), spot, rigid(WB));
+          }
+        } else {
+          for (let k = 0; k < 3; k++) {
+            const geo = new THREE.SphereGeometry(1, 7, 4);
+            geo.scale(r * (0.55 - k * 0.09), r * 0.05, r * 0.17);
+            geo.translate(s * r * 0.48, -k * r * 0.05, -k * r * 0.17);
+            rig.add(geo, M(wx, wy, wz, 0, -s * k * 0.22, s * (0.25 + k * 0.12)), glow('wings', belly.clone().lerp(white, 0.4)), rigid(WB));
+          }
         }
       }
     }
@@ -249,6 +267,12 @@ export class CreatureView {
         if (g.tail === 1) {
           const rad = r * (0.22 - i * 0.02) * (i === n - 1 ? 1.5 : 1);
           rig.add(new THREE.IcosahedronGeometry(1, 1), M(0, py + r * 0.03, pz - seg * 0.5, 0, 0, 0, Math.max(rad, r * 0.06)), glow('tail', i === n - 1 ? belly : base), rigid(TB));
+        } else if (g.tail === 3) {
+          // 触须尾：三缕细长的触须，越往后越细，末端发一点光
+          for (const [dx, dy] of [[0, 0], [r * 0.14, -r * 0.08], [-r * 0.14, -r * 0.08]] as const) {
+            const w = r * Math.max(0.025, 0.06 - i * 0.008);
+            rig.add(new THREE.CylinderGeometry(w * 0.8, w, seg * 1.05, 4).rotateX(Math.PI / 2), M(dx, py + dy, pz - seg * 0.5), glow('tail', i === n - 1 ? spot : belly), rigid(TB));
+          }
         } else {
           rig.add(new THREE.IcosahedronGeometry(1, 0), M(0, py, pz - seg * 0.5, 0, 0, 0, r * 0.08, r * Math.max(0.06, 0.2 - i * 0.02), seg * 0.7), dark, rigid(TB));
           if (i === n - 1)
@@ -438,7 +462,8 @@ export class CreatureView {
     }
     this.tail.forEach((b, i) => {
       b.rotation.y = Math.sin(t * 3 * (1 + w) - i * 0.75 + this.ph) * (0.22 + 0.2 * w) - turn * 0.12;
-      b.rotation.x = 0.18 + Math.sin(t * 2 - i * 0.6) * 0.05;
+      // 触须尾往下垂、慢慢飘；其余尾巴向上卷
+      b.rotation.x = g.tail === 3 ? -0.16 + Math.sin(t * 1.4 - i * 0.8) * 0.08 : 0.18 + Math.sin(t * 2 - i * 0.6) * 0.05;
     });
     for (const wg of this.wings) {
       const flap = g.legs ? (w > 0.6 || this.jy > 0 ? Math.sin(t * 16) * 0.6 : 0.12 + Math.sin(t * 1.5 + this.ph) * 0.05) : Math.sin(t * 7 + this.ph) * 0.55;

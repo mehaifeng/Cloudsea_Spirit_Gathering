@@ -62,6 +62,7 @@ function deepestWater(w: Readonly<WorldState>): { x: number; z: number; depth: n
 }
 
 export const SCENARIOS: Record<string, { readonly desc: string; run(h: ScenarioHost): Promise<void> }> = {
+  gallery: { desc: '图鉴陈列：40 个形态排成方阵（截图自查外观）', run: async () => {} },
   opening: { desc: '新游戏，开场播片从头播', run: (h) => h.newGame() },
   home: { desc: '引导完成，站在岛核前（白天）', run: home },
   night: {

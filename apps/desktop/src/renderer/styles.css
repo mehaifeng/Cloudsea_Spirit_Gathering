@@ -230,3 +230,5 @@ body:has(#dialogue:not(.hidden)) #hints { display: none; }
 #nameplates { position: fixed; inset: 0; pointer-events: none; }
 .nameplate { position: absolute; left: 0; top: 0; font-size: 14px; font-weight: 700; color: var(--ink); background: var(--paper); border: 1.5px solid var(--ink); border-radius: var(--wobble-sm); padding: 1px 8px; white-space: nowrap; box-shadow: 2px 2px 0 rgba(59, 49, 73, 0.25); }
 .nameplate.battle { border-color: var(--stamp); color: var(--stamp); }
+#gallery-labels { position: fixed; inset: 0; pointer-events: none; }
+#gallery-labels .nameplate { position: absolute; left: 0; top: 0; font-size: 12px; }

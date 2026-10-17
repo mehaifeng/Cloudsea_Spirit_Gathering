@@ -30,9 +30,12 @@ export interface MatchResult {
   readonly timedOut: boolean;
 }
 
-/** 按等级选进化段：<16 幼絮，<36 成灵，其余云主形。 */
-export function formIndexForLevel(level: number): number {
-  return level < 16 ? 0 : level < 36 ? 1 : 2;
+/** 按等级选进化段：按该线自己的进化等级（三段线 16 / 36，两段线 30，M3）。 */
+export function formIndexForLevel(level: number, line?: { forms: readonly { evolution?: { level: number } | undefined }[] }): number {
+  if (!line) return level < 16 ? 0 : level < 36 ? 1 : 2;
+  let i = 0;
+  while (i < line.forms.length - 1 && level >= line.forms[i]!.evolution!.level) i++;
+  return i;
 }
 
 export function randomTeam(content: ContentDb, rng: Rng, size: number, level: number, side: number): Spirit[] {
@@ -44,7 +47,7 @@ export function randomTeam(content: ContentDb, rng: Rng, size: number, level: nu
       ownerId: `side${side}`,
       genes: generateWildGenes(rng, line),
       level,
-      formIndex: formIndexForLevel(level),
+      formIndex: formIndexForLevel(level, line),
     });
     // 10 级以上视为已学会本属性技能书（中期队伍的典型配置）
     if (level < 10) return spirit;

@@ -131,6 +131,13 @@ const SCENES: Record<string, (win: Page) => Promise<void>> = {
     for (let i = 0; i < 80 && (await g<string>(win, 'g.mode()')) !== 'voyage'; i++) await win.waitForTimeout(100);
     expect(await g(win, 'g.mode()')).toBe('voyage');
   },
+  gallery: async (win) => {
+    for (const page of [0, 1]) {
+      await g(win, `g.gallery(${page})`);
+      await win.waitForTimeout(800);
+      await shot(win, `gallery-${page}`);
+    }
+  },
   lighthouse: async (win) => {
     await win.waitForTimeout(800);
     await shot(win, 'lighthouse');

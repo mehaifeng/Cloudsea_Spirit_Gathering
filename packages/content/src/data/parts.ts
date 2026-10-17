@@ -137,4 +137,39 @@ export const PARTS: readonly PartInput[] = [
       description: '疾行额外使己方全体闪避提升 1 层，持续 1 回合。',
     },
   },
+
+  // ---------- M3 新零件（编号 13–15；絮灵码零件位 4 bit，最多到 15）----------
+  {
+    id: 'mothWings',
+    no: 13,
+    name: '蛾翼',
+    slot: 'wings',
+    skill: 'dustVeil',
+    workBonus: { task: 'perfumery', multiplier: 1.2 },
+    mutation: {
+      extraEffects: [{ kind: 'ailment', ailment: 'hazed', chance: 0.15 }],
+      description: '鳞粉有机会使敌人陷入迷蒙。',
+    },
+  },
+  {
+    id: 'antennae',
+    no: 14,
+    name: '触角',
+    slot: 'ears',
+    skill: 'staticSense',
+    workBonus: { task: 'power', multiplier: 1.2 },
+    mutation: {
+      extraEffects: [{ kind: 'stage', target: 'self', stat: 'accuracy', delta: 1 }],
+      description: '感电额外使自身命中提升 1 层。',
+    },
+  },
+  {
+    id: 'tendrilTail',
+    no: 15,
+    name: '触须尾',
+    slot: 'tail',
+    skill: 'tendrilSting',
+    workBonus: { task: 'irrigation', multiplier: 1.2 },
+    mutation: { powerMultiplier: 1.25, description: '触须刺威力提升 25%。' },
+  },
 ];

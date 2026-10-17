@@ -3,6 +3,7 @@ import { LINES } from './data/lines';
 import { PARTS } from './data/parts';
 import { SKILLS } from './data/skills';
 import { COUNTERS, ELEMENTS, GENERATES, type Element } from './elements';
+import { REGIONS } from './species';
 import { STATS } from './stats';
 import { buildContent, ContentError, getContent, type RawContent } from './validate';
 
@@ -53,32 +54,34 @@ describe('内置内容', () => {
     expect(issuesOf(RAW)).toEqual([]);
   });
 
-  it('M1：5 条线、15 个形态，每属性 1 条，全部可在晴原刷新', () => {
-    expect(db.lines.size).toBe(5);
-    expect(db.forms.size).toBe(15);
-    expect([...db.lines.values()].map((l) => l.element).sort()).toEqual([...ELEMENTS].sort());
-    for (const line of db.lines.values()) {
-      expect(line.forms).toHaveLength(3);
-      expect(line.spawns.some((s) => s.region === 'sunPlains')).toBe(true);
+  it('M3：14 条线、40 个形态，五属性都有；每个大区至少 3 条线可遇到（DESIGN v0.9）', () => {
+    expect(db.lines.size).toBe(14);
+    expect(db.forms.size).toBe(40);
+    expect(new Set([...db.lines.values()].map((l) => l.element))).toEqual(new Set(ELEMENTS));
+    expect([...db.lines.values()].filter((l) => l.forms.length === 2)).toHaveLength(2);
+    for (const region of REGIONS) {
+      const n = [...db.lines.values()].filter((l) => l.spawns.some((s) => s.region === region)).length;
+      expect(n, region).toBeGreaterThanOrEqual(3);
     }
+    // 图鉴编号 1–40 连续
+    expect([...db.forms.values()].map((f) => f.form.no).sort((a, b) => a - b)).toEqual(Array.from({ length: 40 }, (_, i) => i + 1));
   });
 
-  it('M1 刷新条件符合 DESIGN 4.2：晴常见；风雨看天气；雷在夜晚或雷天；雾要雾浓度 ≥ 2', () => {
-    const byEl = new Map([...db.lines.values()].map((l) => [l.element, l]));
-    expect(byEl.get('sun')!.rarity).toBe('common');
-    expect(byEl.get('rain')!.spawns.every((s) => s.weathers?.includes('rain'))).toBe(true);
-    expect(byEl.get('wind')!.spawns.every((s) => s.weathers?.includes('wind'))).toBe(true);
-    const thunder = byEl.get('thunder')!.spawns;
+  it('M1 晴原的刷新条件仍符合 DESIGN 4.2：晴常见；风雨看天气；雷在夜晚或雷天；雾要雾浓度 ≥ 2', () => {
+    const inSun = (id: string) => db.lines.get(id)!.spawns.filter((s) => s.region === 'sunPlains');
+    expect(db.lines.get('warmbud')!.rarity).toBe('common');
+    expect(inSun('eavedrop').every((s) => s.weathers?.includes('rain'))).toBe(true);
+    expect(inSun('kitefluff').every((s) => s.weathers?.includes('wind'))).toBe(true);
+    const thunder = inSun('forgespark');
     expect(thunder.some((s) => s.time === 'night')).toBe(true);
     expect(thunder.some((s) => s.weathers?.includes('thunder'))).toBe(true);
-    expect(byEl.get('mist')!.spawns.every((s) => (s.minFogLevel ?? 0) >= 2)).toBe(true);
+    expect(inSun('hazepuff').every((s) => (s.minFogLevel ?? 0) >= 2)).toBe(true);
   });
 
-  it('种族值总和：幼絮 250 / 成灵 350 / 云主形 450', () => {
-    const expected = { hatchling: 250, adult: 350, lord: 450 };
-    for (const { form } of db.forms.values()) {
-      const total = STATS.reduce((sum, s) => sum + form.baseStats[s], 0);
-      expect(total, form.id).toBe(expected[form.stage]);
+  it('种族值总和：三段线 250 / 350 / 450；两段线 250 / 390（苔蝾成体 365：30 级就进化，按 battle-sim 下调）', () => {
+    for (const line of db.lines.values()) {
+      const expected = line.forms.length === 3 ? [250, 350, 450] : [250, 390];
+      line.forms.forEach((form, i) => expect(STATS.reduce((sum, s) => sum + form.baseStats[s], 0), form.id).toBe(line.id === 'mossnewt' && i === 1 ? 365 : expected[i]));
     }
   });
 
@@ -86,9 +89,10 @@ describe('内置内容', () => {
     for (const line of db.lines.values()) expect(line.sexRatio).toBe(0.5);
   });
 
-  it('DESIGN 4.4 的 12 个零件技能都有零件携带，基础动作 0 费', () => {
-    expect(db.parts.size).toBe(12);
-    expect([...db.skills.values()].filter((s) => s.source === 'part')).toHaveLength(12);
+  it('15 个零件（编号 1–15，絮灵码零件位上限）都有零件技能，基础动作 0 费', () => {
+    expect(db.parts.size).toBe(15);
+    expect(Math.max(...[...db.parts.values()].map((p) => p.no))).toBe(15);
+    expect([...db.skills.values()].filter((s) => s.source === 'part')).toHaveLength(15);
     for (const id of ['jab', 'guard']) expect(db.skills.get(id)!.qiCost).toBe(0);
   });
 
