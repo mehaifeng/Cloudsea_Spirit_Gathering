@@ -138,7 +138,7 @@ export function planKeeperDay(content: ContentDb, world: WorldState, k: KeeperSt
     let w = def.plannerWeights[g] ?? 0;
     if (g === 'farm' && (weather === 'rain' || weather === 'sun')) w *= 1.5;
     if (g === 'explore' && weather === def.favoriteElement) w *= 1.5;
-    if (g === 'visit' && Object.keys(world.characters).length === 0) w = 0;
+    if (g === 'visit' && !Object.values(world.characters).some((c) => c.tutorial.done)) w = 0;
     if (g === 'postOrder' && world.orders.some((o) => o.source === k.id && o.fulfilledBy === null && o.expiresDay >= day)) w = 0;
     return w;
   });
@@ -171,7 +171,8 @@ export function planKeeperDay(content: ContentDb, world: WorldState, k: KeeperSt
       break;
     }
     case 'visit': {
-      const players = Object.keys(world.characters);
+      // 只拜访已经走完新手引导的玩家
+      const players = Object.values(world.characters).filter((c) => c.tutorial.done).map((c) => c.id);
       const playerId = rng.pick(players);
       k.visiting = { playerId, untilTick: world.tick + Math.round(TICKS_PER_DAY * 0.25) };
       events.push({ t: 'keeperVisit', keeperId: k.id, playerId });

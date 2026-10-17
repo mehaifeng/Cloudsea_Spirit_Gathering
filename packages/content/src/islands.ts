@@ -22,8 +22,8 @@ export const islandSchema = z.strictObject({
   altitude: z.number().min(-20).max(20),
   /** 星图上的位置（相对坐标）。 */
   chartPos: z.strictObject({ x: z.number(), y: z.number() }),
-  /** 航行所需风帆等级。 */
-  sailLevel: z.int().min(1).max(5),
+  /** 航行所需云舟等级（v0.5 起取代风帆）。 */
+  skiffLevel: z.int().min(1).max(5),
   /** 野生絮灵等级范围。 */
   wildLevel: z.strictObject({ min: z.int().min(1), max: z.int().max(60) }),
   /** 同时存在的野生絮灵数量。 */

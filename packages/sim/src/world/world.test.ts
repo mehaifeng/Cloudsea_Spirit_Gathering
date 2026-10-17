@@ -444,6 +444,18 @@ describe('存档', () => {
     expect(__migrate({ version: 1 }, 3, migrations, 'x')).toEqual({ version: 3, a: 1, b: 2 });
     expect(() => __migrate({ version: 1 }, 3, { 1: migrations[1] }, 'x')).toThrow(/无法从 v2 升级/);
   });
+
+  it('角色存档 v1 → v2：风帆改为云舟、补上看过的播片列表', () => {
+    const v1 = {
+      kind: 'cloudsea-character',
+      version: 1,
+      character: { ...createCharacter(content, { id: 'p9', name: '旧档' }), version: 1, tools: { lantern: 2, sail: 3, gatherTool: 1 }, seenCutscenes: undefined, tutorial: { step: 6, done: true } },
+    };
+    const c = loadCharacter(JSON.parse(JSON.stringify(v1)));
+    expect(c.version).toBe(2);
+    expect(c.tools).toEqual({ lantern: 2, skiff: 3, gatherTool: 1 });
+    expect(c.seenCutscenes).toEqual(['opening']);
+  });
 });
 
 describe('确定性', () => {

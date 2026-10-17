@@ -17,7 +17,7 @@ export interface Appearance {
  * 可带进任何世界。
  */
 export interface CharacterState {
-  readonly version: 1;
+  readonly version: 2;
   readonly id: string;
   name: string;
   appearance: Appearance;
@@ -33,6 +33,8 @@ export interface CharacterState {
   blueprints: string[];
   nextSpiritSeq: number;
   tutorial: { step: number; done: boolean };
+  /** 看过的一次性播片（开场、首次遭遇、登岛定场、初见守岛人……），v2 新增。 */
+  seenCutscenes: string[];
   stats: { battlesWon: number; caught: number; bred: number };
 }
 

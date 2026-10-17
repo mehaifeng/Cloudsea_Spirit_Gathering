@@ -14,13 +14,14 @@ export const DEFAULT_APPEARANCE: Appearance = {
 
 export function createCharacter(content: ContentDb, o: { id: string; name: string; appearance?: Appearance }): CharacterState {
   return {
-    version: 1,
+    version: 2,
     id: o.id,
     name: o.name,
     appearance: o.appearance ?? DEFAULT_APPEARANCE,
     shells: ECONOMY.startShells,
     backpack: { lanternDew: 8, sunWheatSeed: 6 },
-    tools: { lantern: 1, sail: 1, gatherTool: 1 },
+    tools: { lantern: 1, skiff: 1, gatherTool: 1 },
+    seenCutscenes: [],
     spirits: {},
     party: [],
     codex: { seen: [], caught: [] },

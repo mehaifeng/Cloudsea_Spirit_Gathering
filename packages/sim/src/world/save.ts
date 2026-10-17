@@ -5,7 +5,7 @@ import type { CharacterState, WorldState } from './state';
  * 结构变更时：版本号 +1，在 MIGRATIONS 里加一条从旧版本升级的函数，并补测试。
  */
 export const WORLD_SAVE_VERSION = 1;
-export const CHARACTER_SAVE_VERSION = 1;
+export const CHARACTER_SAVE_VERSION = 2;
 
 export interface WorldSaveFile {
   readonly kind: 'cloudsea-world';
@@ -24,7 +24,17 @@ type Migration = (data: Record<string, unknown>) => Record<string, unknown>;
 
 /** 版本 n → n+1 的迁移函数。键是旧版本号。 */
 export const WORLD_MIGRATIONS: Readonly<Record<number, Migration>> = {};
-export const CHARACTER_MIGRATIONS: Readonly<Record<number, Migration>> = {};
+export const CHARACTER_MIGRATIONS: Readonly<Record<number, Migration>> = {
+  /** v1 → v2（DESIGN v0.5）：工具“风帆”改为“云舟”；新增看过的播片列表（已完成引导的角色视为看过开场）。 */
+  1: (data) => {
+    const c = { ...(data['character'] as Record<string, unknown>) };
+    const tools = { ...(c['tools'] as Record<string, number>) };
+    tools['skiff'] = tools['skiff'] ?? tools['sail'] ?? 1;
+    delete tools['sail'];
+    const tutorial = c['tutorial'] as { done?: boolean } | undefined;
+    return { ...data, character: { ...c, version: 2, tools, seenCutscenes: tutorial?.done ? ['opening'] : [] } };
+  },
+};
 
 export class SaveError extends Error {
   constructor(message: string) {

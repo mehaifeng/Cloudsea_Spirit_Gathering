@@ -173,7 +173,7 @@ export function buildContent(raw: RawContent): ContentDb {
     for (const o of ORDER_TEMPLATES) needItem('order', o.item);
     for (const bp of BLUEPRINT_SHOP) if (!buildings.has(bp.blueprint)) issues.push(`blueprint shop: ${bp.blueprint} 不存在`);
     for (let lv = 1; lv < 10; lv++) for (const st of coreUpgradeCost(lv).items) needItem('core upgrade', st.item);
-    for (const tool of ['lantern', 'sail', 'gatherTool'] as const) for (const st of toolUpgradeCost(tool, 1).items) needItem(`tool ${tool}`, st.item);
+    for (const tool of ['lantern', 'skiff', 'gatherTool'] as const) for (const st of toolUpgradeCost(tool, 1).items) needItem(`tool ${tool}`, st.item);
 
     for (const isl of islands.values()) {
       if ((isl.kind === 'keeper') !== !!isl.keeper) issues.push(`island ${isl.id}: 守岛人岛必须（且只有它）指定守岛人`);

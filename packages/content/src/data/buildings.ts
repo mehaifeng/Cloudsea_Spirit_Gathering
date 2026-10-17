@@ -8,7 +8,7 @@ export const BUILDINGS: readonly BuildingInput[] = [
     workSlots: 0, workTasks: [], countsTowardLimit: false, maxCount: 1,
   },
   {
-    id: 'dock', name: '码头', kind: 'dock', description: '风帆停靠的地方。商队的订单板也在这里。',
+    id: 'dock', name: '码头', kind: 'dock', description: '云舟停靠的地方。风帆商队的订单板也在这里。',
     size: { w: 4, d: 3 }, cost: { shells: 0, items: [] }, buildWork: 0, coreLevel: 1, starterBlueprint: false,
     workSlots: 0, workTasks: [], countsTowardLimit: false, maxCount: 1,
   },

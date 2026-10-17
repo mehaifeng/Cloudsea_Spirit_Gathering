@@ -29,15 +29,16 @@ export function coreUpgradeCost(level: number): { shells: number; items: ItemSta
   };
 }
 
-export type ToolKind = 'lantern' | 'sail' | 'gatherTool';
-export const TOOL_NAME: Readonly<Record<ToolKind, string>> = { lantern: '提灯', sail: '风帆', gatherTool: '采集工具' };
+/** 玩家工具（DESIGN 8）：提灯、云舟（v0.5 起取代风帆）、采集工具。 */
+export type ToolKind = 'lantern' | 'skiff' | 'gatherTool';
+export const TOOL_NAME: Readonly<Record<ToolKind, string>> = { lantern: '提灯', skiff: '云舟', gatherTool: '采集工具' };
 
 /** 工具从 level 升到 level+1 的花费（DESIGN 8：蓝图 + 材料 + 云贝；M1 蓝图默认已有）。 */
 export function toolUpgradeCost(tool: ToolKind, level: number): { shells: number; items: ItemStack[] } {
   switch (tool) {
     case 'lantern':
       return { shells: 300 * level, items: [{ item: 'mistCrystal', count: 3 * level }, { item: 'copperIngot', count: level }] };
-    case 'sail':
+    case 'skiff':
       return { shells: 400 * level, items: [{ item: 'plank', count: 4 * level }, { item: 'windbellFruit', count: 2 * level }] };
     case 'gatherTool':
       return { shells: 200 * level, items: [{ item: 'copperIngot', count: 2 * level }] };

@@ -77,7 +77,9 @@ export type Intent =
   | { readonly type: 'challenge'; readonly keeperId: string }
   | { readonly type: 'importSpirit'; readonly code: string }
   | { readonly type: 'pause'; readonly paused: boolean }
-  | { readonly type: 'tutorial'; readonly step: number; readonly done?: boolean };
+  | { readonly type: 'tutorial'; readonly step: number; readonly done?: boolean }
+  /** 记下看过的一次性播片。 */
+  | { readonly type: 'seenCutscene'; readonly id: string };
 
 export interface IntentResult {
   readonly ok: boolean;
@@ -145,7 +147,7 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
       }
       const island = content.islands.get(intent.islandId);
       if (!island) return fail('没有这座岛');
-      if (c.tools.sail < island.sailLevel) return fail(`需要 ${island.sailLevel} 级风帆`);
+      if (c.tools.skiff < island.skiffLevel) return fail(`需要 ${island.skiffLevel} 级云舟`);
       if (c.tools.lantern < island.fogLevel) return fail(`雾太浓了，需要 ${island.fogLevel} 级提灯`);
       if (island.fogLevel > 0 && (c.backpack['lanternFuel'] ?? 0) < island.fogLevel) return fail(`提灯燃料不够（需要 ${island.fogLevel}）`);
       if (island.fogLevel > 0) removeItems(c.backpack, 'lanternFuel', island.fogLevel);
@@ -589,6 +591,11 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
       if (!c.codex.seen.includes(data.formId)) c.codex.seen.push(data.formId);
       return ok();
     }
+
+    case 'seenCutscene':
+      if (!/^[a-zA-Z0-9:_-]{1,64}$/.test(intent.id)) return fail('无效的播片 id');
+      if (!c.seenCutscenes.includes(intent.id)) c.seenCutscenes.push(intent.id);
+      return ok();
 
     case 'tutorial':
       c.tutorial = { step: Math.max(c.tutorial.step, intent.step), done: c.tutorial.done || !!intent.done };
