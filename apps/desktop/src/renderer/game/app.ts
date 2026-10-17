@@ -1,4 +1,4 @@
-import { getContent } from '@cloudsea/content';
+import { ECONOMY, getContent } from '@cloudsea/content';
 import {
   createRng,
   createSpirit,
@@ -493,6 +493,17 @@ export class App {
       case 'pet':
         this.explore?.celebrate(it.id);
         break;
+      case 'recruit': {
+        const s = c.spirits[it.id];
+        if (!s) break;
+        const name = s.nickname ?? this.content.forms.get(s.formId)!.form.name;
+        if (c.party.length >= ECONOMY.partyMax) {
+          this.ui.toast(`队伍满了（${ECONOMY.partyMax} 只），先在菜单里让一只留下`, 'error');
+          break;
+        }
+        if (await this.act({ type: 'setParty', spiritIds: [...c.party, it.id] }, `${name} 跟上了你`)) this.explore?.celebrate(it.id);
+        break;
+      }
       case 'starter':
         if (await this.act({ type: 'adoptStarter' })) {
           await this.act({ type: 'tutorial', step: 2 });

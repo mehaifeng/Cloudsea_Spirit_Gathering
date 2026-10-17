@@ -42,7 +42,7 @@ import * as THREE from 'three';
 import type { Input } from './input';
 import { PLAYER_ID } from './session';
 
-export type InteractKind = 'gather' | 'wild' | 'keeper' | 'building' | 'dock' | 'pier' | 'core' | 'starter' | 'pet';
+export type InteractKind = 'gather' | 'wild' | 'keeper' | 'building' | 'dock' | 'pier' | 'core' | 'starter' | 'pet' | 'recruit';
 
 export interface Interactable {
   readonly kind: InteractKind;
@@ -396,7 +396,11 @@ export class ExploreView {
     for (const [id, e] of this.creatures) {
       if (e.kind !== 'own') continue;
       const s = c.spirits[id];
-      if (s) list.push({ kind: 'pet', id, x: e.view.x, z: e.view.z, label: `抚摸 ${s.nickname ?? this.content.forms.get(s.formId)!.form.name}`, radius: 1.6 });
+      if (!s) continue;
+      const name = s.nickname ?? this.content.forms.get(s.formId)!.form.name;
+      // 队伍里的：抚摸；家里闲着 / 打工的：直接带上（等同菜单里的“加入队伍”）
+      if (s.state === 'party') list.push({ kind: 'pet', id, x: e.view.x, z: e.view.z, label: `抚摸 ${name}`, radius: 1.6 });
+      else list.push({ kind: 'recruit', id, x: e.view.x, z: e.view.z, label: s.state === 'working' ? `带上 ${name}（停下手里的活）` : `带上 ${name}`, radius: 1.6 });
     }
     if (this.isHome) {
       for (const { inst } of this.buildings.values()) {
@@ -618,7 +622,7 @@ export class ExploreView {
     let near: Interactable | null = null;
     let nd = Infinity;
     for (const it of [...this.interactables, ...this.extraInteractables]) {
-      const live = it.kind === 'wild' || it.kind === 'pet' ? this.creatures.get(it.id)?.view : null;
+      const live = it.kind === 'wild' || it.kind === 'pet' || it.kind === 'recruit' ? this.creatures.get(it.id)?.view : null;
       const x = live?.x ?? it.x;
       const z = live?.z ?? it.z;
       const d = Math.hypot(x - P.x, z - P.z);

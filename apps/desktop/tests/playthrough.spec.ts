@@ -216,6 +216,21 @@ test('新手引导与核心循环', async () => {
   await closeDialogues(win);
   expect(await g(win, 'g.world().characters.p1.tutorial.done')).toBe(true);
 
+  // 走到家里打工的絮灵身边按 E → 直接带上它（Lynx 反馈：不用进菜单）；之后放回田地
+  await win.waitForTimeout(600);
+  const spot = await g<{ x: number; z: number } | null>(win, `(() => { const it = g.interactables().find((i) => i.kind === 'recruit' && i.id === '${worker}'); return it ? { x: it.x, z: it.z } : null; })()`);
+  expect(spot).not.toBeNull();
+  await g(win, `g.teleport(${spot!.x + 0.8}, ${spot!.z})`);
+  await win.waitForTimeout(400);
+  expect(await g(win, 'g.nearest()?.kind')).toBe('recruit');
+  await win.screenshot({ path: 'screenshots/08b-recruit.png' });
+  await win.keyboard.press('KeyE');
+  await win.waitForTimeout(500);
+  expect(await g(win, `g.world().characters.p1.party.includes('${worker}')`)).toBe(true);
+  expect(await g(win, `g.world().characters.p1.spirits['${worker}'].state`)).toBe('party');
+  expect((await g<{ ok: boolean }>(win, `g.act({ type: 'setParty', spiritIds: ${JSON.stringify(keep)} })`)).ok).toBe(true);
+  expect((await g<{ ok: boolean }>(win, `g.act({ type: 'assignWorker', buildingId: '${fieldId}', spiritId: '${worker}' })`)).ok).toBe(true);
+
   // 菜单与建造模式
   await win.keyboard.press('Tab');
   await win.waitForTimeout(400);
