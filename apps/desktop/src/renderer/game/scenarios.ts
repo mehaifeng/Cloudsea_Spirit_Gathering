@@ -101,6 +101,15 @@ export const SCENARIOS: Record<string, { readonly desc: string; run(h: ScenarioH
       h.advance(0.5);
     },
   },
+  core: {
+    desc: '家园岛核心塔近景（地上一圈光点是治疗范围）',
+    run: async (h) => {
+      await home(h);
+      h.teleport(0, 4.2, Math.PI);
+      h.setCamera(0.5, 0.28, 6.5);
+      h.advance(0.5);
+    },
+  },
   dock: {
     desc: '站在码头上，旁边停着云舟',
     run: async (h) => {
@@ -115,6 +124,15 @@ export const SCENARIOS: Record<string, { readonly desc: string; run(h: ScenarioH
     run: async (h) => {
       await home(h);
       await h.sail('wheatSlope');
+    },
+  },
+  boarding: {
+    desc: '在码头上船（舷梯放下、沿舷梯走上去）——不等上完',
+    run: async (h) => {
+      await home(h);
+      h.teleport(0, 15.5, 0);
+      h.setCamera(-0.9, 0.42, 9);
+      void h.sail('wheatSlope');
     },
   },
   ambush: {

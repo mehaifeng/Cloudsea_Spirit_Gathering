@@ -72,6 +72,13 @@ const SCENES: Record<string, (win: Page) => Promise<void>> = {
     expect((await g<{ swimming: boolean }>(win, 'g.player()')).swimming).toBe(true);
     await shot(win, 'shore-b-swim');
   },
+  core: async (win) => {
+    await win.waitForTimeout(500);
+    await shot(win, 'core-a-day');
+    await g(win, 'g.fastForward(8200 - g.world().tick % 12000)');
+    await win.waitForTimeout(1200);
+    await shot(win, 'core-b-night');
+  },
   dock: async (win) => {
     await win.waitForTimeout(400);
     const p = await g<{ y: number }>(win, 'g.player()');
@@ -88,6 +95,8 @@ const SCENES: Record<string, (win: Page) => Promise<void>> = {
   },
   voyage: async (win) => {
     await shot(win, 'voyage-a-boarded');
+    // 下船前后都不能被云舟挡住：船上的玩家在甲板高度
+    expect((await g<{ y: number }>(win, 'g.player()')).y).toBeGreaterThan(0.6);
     for (let i = 0; i < 50 && (await g<string>(win, 'g.mode()')) !== 'voyage'; i++) await win.waitForTimeout(100);
     await win.waitForTimeout(1500);
     await shot(win, 'voyage-b-depart');
@@ -95,15 +104,25 @@ const SCENES: Record<string, (win: Page) => Promise<void>> = {
     await shot(win, 'voyage-c-cruise');
     await win.keyboard.press('Space');
     for (let i = 0; i < 80 && (await g<string>(win, 'g.mode()')) !== 'landing'; i++) await win.waitForTimeout(100);
-    await win.waitForTimeout(500);
-    await shot(win, 'voyage-d-landing');
+    await win.waitForTimeout(1200);
+    await shot(win, 'voyage-d-gangway-down');
     for (let i = 0; i < 80 && (await g<string>(win, 'g.mode()')) === 'landing'; i++) await win.waitForTimeout(100);
     await shot(win, 'voyage-e-landed');
   },
+  boarding: async (win) => {
+    for (const [ms, name] of [[1500, 'a'], [1200, 'b'], [1200, 'c'], [1500, 'd']] as const) {
+      await win.waitForTimeout(ms);
+      await shot(win, `boarding-${name}`);
+    }
+    for (let i = 0; i < 80 && (await g<string>(win, 'g.mode()')) !== 'voyage'; i++) await win.waitForTimeout(100);
+    expect(await g(win, 'g.mode()')).toBe('voyage');
+  },
   ambush: async (win) => {
     for (let i = 0; i < 40 && (await g<string>(win, 'g.mode()')) !== 'cutscene'; i++) await win.waitForTimeout(100);
-    await win.waitForTimeout(1200);
-    await shot(win, 'ambush-a-run');
+    await win.waitForTimeout(700);
+    await shot(win, 'ambush-a-mist');
+    await win.waitForTimeout(700);
+    await shot(win, 'ambush-a2-run');
     await win.waitForTimeout(2200);
     await shot(win, 'ambush-b-face');
     for (let i = 0; i < 60 && (await g<string>(win, 'g.mode()')) !== 'transition'; i++) await win.waitForTimeout(50);

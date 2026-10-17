@@ -46,7 +46,7 @@ import {
 } from '@cloudsea/sim';
 import { button, elementBadge, elementIcon, h, icon } from '@cloudsea/ui';
 import { PLAYER_ID } from './session';
-import { elementBadges, itemName, spiritTitle, statBlock, stateLabel } from './text';
+import { conditionText, elementBadges, itemName, spiritTitle, statBlock, stateLabel } from './text';
 import type { UiRoot } from './uiRoot';
 
 export interface Ctx {
@@ -153,7 +153,7 @@ function spiritDetail(ctx: Ctx, id: string): HTMLElement {
     { class: 'col' },
     h('div', { class: 'row' }, spiritTitle(content, s), elementBadges(content, s), h('span', { class: 'tag' }, stateLabel(s))),
     h('div', { class: 'muted' }, `${line.name} · ${form.name}（${['幼絮', '成灵', '云主形'][line.forms.indexOf(form)]}）· 性格 ${nature.name}${nature.up !== nature.down ? `（${STAT_NAME[nature.up]}↑ ${STAT_NAME[nature.down]}↓）` : '（中性）'} · 体型 ${s.genes.sizePercent}% · 花纹 ${{ plain: '素色', spots: '斑点', stripes: '条纹' }[s.genes.pattern]}`),
-    h('div', { class: 'muted' }, `经验 ${s.exp - expForLevel(s.level)} / ${s.level >= 60 ? '—' : expForLevel(s.level + 1) - expForLevel(s.level)}`, s.weary ? `  · 疲惫：自然恢复还需约 ${Math.ceil(s.wearyRemaining / 1200) / 10} 天；在家园岛上休息更快，喂暖心包立刻恢复` : ''),
+    h('div', { class: 'muted' }, `经验 ${s.exp - expForLevel(s.level)} / ${s.level >= 60 ? '—' : expForLevel(s.level + 1) - expForLevel(s.level)}`, conditionText(content, s) ? `  · ${conditionText(content, s)}` : ''),
     statBlock(content, s),
   );
 
@@ -210,7 +210,7 @@ function spiritDetail(ctx: Ctx, id: string): HTMLElement {
   }
   for (const [itemId, n] of Object.entries(c.backpack)) {
     const item = content.items.get(itemId);
-    if (item?.food && s.state !== 'egg') actions.append(button(`喂 ${item.name}（${n}）`, () => void doAndRefresh(ctx, { type: 'feed', spiritId: s.id, item: itemId }, item.food!.curesWeary && s.weary ? '它精神了！' : '它吃得很开心')));
+    if (item?.food && s.state !== 'egg') actions.append(button(`喂 ${item.name}（${n}）`, () => void doAndRefresh(ctx, { type: 'feed', spiritId: s.id, item: itemId }, item.food!.heal > 0 ? '它恢复了！' : '它吃得很开心')));
     if (item?.teaches && !s.learnedSkills.includes(item.teaches) && s.state !== 'egg') actions.append(button(`学习 ${item.name}`, () => void doAndRefresh(ctx, { type: 'learnBook', spiritId: s.id, item: itemId }, '学会了新技能！')));
   }
   const nameInput = h('input', { type: 'text', value: s.nickname ?? '', placeholder: form.name, maxlength: '16', style: 'width:140px' }) as HTMLInputElement;
@@ -427,7 +427,7 @@ function buildingPanel(ctx: Ctx, id: string): HTMLElement {
         break;
       }
       case 'nest': {
-        body.push(h('div', {}, `絮灵 ${spiritCount(c)} / ${spiritCapacity(ctx.content, hm)}。在家空闲的絮灵在栖巢里恢复疲惫更快（2 倍）。`));
+        body.push(h('div', {}, `絮灵 ${spiritCount(c)} / ${spiritCapacity(ctx.content, hm)}。家园岛上的絮灵恢复生命快一倍。`));
         break;
       }
       case 'hatchery': {
@@ -445,7 +445,7 @@ function buildingPanel(ctx: Ctx, id: string): HTMLElement {
         break;
       }
       case 'hotSpring':
-        body.push(h('div', {}, '在家空闲的絮灵泡温泉恢复疲惫最快（4 倍）；有温泉时蛋孵化只要 1 天。'));
+        body.push(h('div', {}, '家园岛上的絮灵恢复生命快四倍；有温泉时蛋孵化只要 1 天。'));
         break;
       case 'storage':
         body.push(h('div', {}, `仓库容量 ${slotsUsed(hm.storage)}/${storageCapacity(ctx.content, hm)} 格。`));

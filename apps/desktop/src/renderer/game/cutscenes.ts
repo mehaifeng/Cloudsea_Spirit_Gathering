@@ -72,6 +72,9 @@ export function openingShots(view: ExploreView): Shot[] {
       if (!impacted) {
         impacted = true;
         skiff.setCore(0);
+        // 触地这一刻船底才撞坏：换成破损的船底，木屑飞溅（v0.7）
+        skiff.setDamaged(true);
+        view.fx.spawn('spark', p.pos.clone().add(v3(0, 0.3, 0)), 16, { size: 0.3, vy: 2.4, life: 1.1, spread: 3.2, color: 0x9a6a43 });
         view.fx.spawn('puff', p.pos.clone().add(v3(0, 0.4, 0)), 14, { size: 1.3, vy: 1.2, life: 1.4, spread: 3, color: 0xa08468 });
       }
       P.stagger = 1;
@@ -112,8 +115,10 @@ export function openingShots(view: ExploreView): Shot[] {
     if (!finished) apply(T, dt);
   };
   const outPoint = () => {
-    const pts = view.boardingPoints();
-    return { pts, land: { x: pts.outside.x + (pts.outside.x - pts.inside.x) * 1.8, z: pts.outside.z + (pts.outside.z - pts.inside.z) * 1.8 } };
+    // 从朝向云气团的那一舷跳下去（两舷都有登船口，v0.7）
+    const O = ExploreView.ORB;
+    const pts = ([-1, 1] as const).map((side) => view.boardingPoints(side)).sort((p, q) => Math.hypot(p.approach.x - O.x, p.approach.z - O.z) - Math.hypot(q.approach.x - O.x, q.approach.z - O.z))[0]!;
+    return { pts, land: pts.approach };
   };
   /** 终态：云舟停在残骸位置、土痕完整、玩家站在船边的地上、镜头朝向云气团。 */
   const finalize = () => {
@@ -121,6 +126,7 @@ export function openingShots(view: ExploreView): Shot[] {
     finished = true;
     apply(T_STOP + 1, 0);
     skiff.setCore(0);
+    skiff.setDamaged(true);
     view.unride();
     const { land } = outPoint();
     const O = ExploreView.ORB;
@@ -152,6 +158,7 @@ export function openingShots(view: ExploreView): Shot[] {
       onStart: () => {
         view.ride(skiff.group, v3(seat.x, seat.y, seat.z));
         view.setTrenchProgress(0);
+        skiff.setDamaged(false);
         apply(0, 0);
       },
       from: camAt,
@@ -214,7 +221,7 @@ export function ambushShots(view: ExploreView, actorId: string): Shot[] {
     return v3(t.x - (dx / len) * 1.4 + (-dz / len) * 2.2, t.y + 0.45, t.z - (dz / len) * 1.4 + (dx / len) * 2.2);
   };
   return [
-    { duration: 1.3, ease: 'inOut', subtitle: '远处传来一声低吼——', from: () => view.followPose(), to: () => pose(shoulder(), target()) },
+    { duration: 1.3, ease: 'inOut', subtitle: '不远处，一团混沌的迷雾翻滚着聚拢——', from: () => view.followPose(), to: () => pose(shoulder(), target()) },
     { duration: 1.5, ease: 'linear', from: () => pose(shoulder(), target()), to: () => pose(shoulder(), target()) },
     {
       duration: 1.6,

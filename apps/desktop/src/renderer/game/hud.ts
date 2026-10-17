@@ -1,5 +1,5 @@
 import { ELEMENT_INFO, type ContentDb } from '@cloudsea/content';
-import { clockAt, formatClock, homeIslandId, weatherAt, type WorldState } from '@cloudsea/sim';
+import { clockAt, currentHp, formatClock, homeIslandId, maxHpOf, weatherAt, type WorldState } from '@cloudsea/sim';
 import { clear, elementIcon, h, icon } from '@cloudsea/ui';
 import type { Interactable } from './explore';
 import { PLAYER_ID } from './session';
@@ -23,7 +23,7 @@ export class Hud {
     const clock = clockAt(world.tick);
     const weather = weatherAt(world.seed, island?.region ?? 'sunPlains', world.tick);
     const placeName = p.islandId === homeIslandId(PLAYER_ID) ? `${c.name}的家园岛` : island?.name ?? '';
-    const key = [clock.day, formatClock(clock), weather, placeName, c.shells, c.backpack['lanternFuel'] ?? 0, c.backpack['lanternDew'] ?? 0, mode, world.paused, JSON.stringify(c.party.map((id) => [c.spirits[id]?.level, c.spirits[id]?.weary, c.spirits[id]?.formId]))].join('|');
+    const key = [clock.day, formatClock(clock), weather, placeName, c.shells, c.backpack['lanternFuel'] ?? 0, c.backpack['lanternDew'] ?? 0, mode, world.paused, JSON.stringify(c.party.map((id) => [c.spirits[id]?.level, c.spirits[id]?.condition?.hp, c.spirits[id]?.formId]))].join('|');
     if (key !== this.lastKey) {
       this.lastKey = key;
       clear(this.ui.hudTL);
@@ -41,18 +41,22 @@ export class Hud {
         h('span', { class: 'hud-chip', title: '灯露' }, icon('star'), String((c.backpack['lanternDew'] ?? 0) + (c.backpack['refinedDew'] ?? 0) + (c.backpack['superiorDew'] ?? 0))),
       );
       if (mode !== 'battle') {
-        // 队伍徽章（v0.6）：属性图标 + 名字首字 + 等级 + 疲惫标记，点击打开详情
+        // 队伍徽章（v0.6）：属性图标 + 名字首字 + 等级 + 生命条（倒下的有标记），点击打开详情
         for (const id of c.party) {
           const s = c.spirits[id];
           if (!s) continue;
           const form = this.content.forms.get(s.formId)!;
           const name = s.nickname ?? form.form.name;
+          const hp = currentHp(this.content, s);
+          const max = maxHpOf(this.content, s);
+          const down = hp <= 0;
           const badge = h(
             'button',
-            { class: `party-badge ${s.weary ? 'weary' : ''}`, title: `${name} Lv.${s.level}${s.weary ? '（疲惫）' : ''} · 点击查看`, 'data-spirit': id },
+            { class: `party-badge ${down ? 'down' : ''}`, title: `${name} Lv.${s.level} · 生命 ${hp}/${max}${down ? '（倒下了）' : ''} · 点击查看`, 'data-spirit': id },
             elementIcon(form.line.element, 14),
             h('span', { class: 'nm' }, name.slice(0, 2)),
             h('span', { class: 'lv' }, String(s.level)),
+            h('span', { class: `mini-hp ${hp / max < 0.3 ? 'low' : ''}` }, h('i', { style: `width:${Math.round((hp / max) * 100)}%` })),
           );
           badge.addEventListener('click', () => this.onPartyClick?.(id));
           this.ui.partyBar.append(badge);

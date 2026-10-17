@@ -1,6 +1,6 @@
 import { ELEMENT_INFO, type ContentDb } from '@cloudsea/content';
 import { clockAt, homeIslandId, islandWorldPos, weatherAt, type Spirit, type WorldState } from '@cloudsea/sim';
-import { CreatureView, Environment, glowTexture, HumanoidView, lookFromSpirit, makeSkiff, nightFactor, type SkiffView } from '@cloudsea/render';
+import { CreatureView, Environment, setWaterTint, glowTexture, HumanoidView, lookFromSpirit, makeSkiff, nightFactor, type SkiffView } from '@cloudsea/render';
 import * as THREE from 'three';
 import type { ExploreView } from './explore';
 import { PLAYER_ID } from './session';
@@ -59,8 +59,7 @@ export class VoyageView {
     // 起点镜头：出发岛当前的镜头（换算到世界坐标）
     const look = new THREE.Vector3(origin.player.x, origin.player.feetY + 1.15, origin.player.z).add(this.originAt);
     this.startPose = { pos: camera.position.clone().add(this.originAt), look };
-    // 目的岛：玩家先站在停泊云舟的甲板上（降落后从这里下船），镜头对准那里
-    dest.placeOnDeck();
+
 
     // 两座岛的场景挂进来；出发岛的玩家与队伍上了云舟，目的岛先藏着（远景代替）
     origin.root.position.copy(this.originAt);
@@ -74,7 +73,20 @@ export class VoyageView {
 
     // 航线：出发泊位 → 爬升 → 巡航 → 下降 → 目的泊位
     const b0 = origin.berth();
-    const b1 = dest.berth();
+    const b0p = origin.berth();
+    let b1 = dest.berth();
+    // 降落朝向（v0.7）：停泊方向的正反两个朝向里，选和来向更接近的那个，直接落下（不再掉头）；
+    // 两舷都有登船口，下船时用靠栈桥 / 码头那一舷
+    {
+      const inDir = new THREE.Vector3(b1.x, 0, b1.z).add(this.destAt).sub(new THREE.Vector3(b0p.x, 0, b0p.z).add(this.originAt)).normalize();
+      const fwd = new THREE.Vector3(Math.sin(b1.yaw), 0, Math.cos(b1.yaw));
+      const yaw = fwd.dot(inDir) >= 0 ? b1.yaw : b1.yaw + Math.PI;
+      dest.setBerthYaw(yaw);
+      b1 = dest.berth();
+    }
+    // 目的岛：玩家先站在停泊云舟的甲板上（降落后从这里下船），镜头对准那里
+    dest.placeOnDeck();
+    this.arriveYaw = b1.yaw;
     const p0 = new THREE.Vector3(b0.x, b0.y, b0.z).add(this.originAt);
     const p3 = new THREE.Vector3(b1.x, b1.y, b1.z).add(this.destAt);
     // 起飞沿停泊时的船头方向、降落沿目的地停泊的船头方向：上下船时船身朝向和停着的一致
@@ -82,9 +94,8 @@ export class VoyageView {
     const out = new THREE.Vector3(Math.sin(b0.yaw), 0, Math.cos(b0.yaw));
     const inn = new THREE.Vector3(Math.sin(b1.yaw), 0, Math.cos(b1.yaw));
     const p1 = p0.clone().addScaledVector(out, Math.min(60, dist * 0.3)).add(new THREE.Vector3(0, 24, 0));
-    // 降落：从海的那一侧（停泊船头朝外的方向）飞进来，最后一段原地掉头停好（船头朝外，方便下次起飞）
-    const p2 = p3.clone().addScaledVector(inn, Math.min(70, dist * 0.3)).add(new THREE.Vector3(0, 20, 0));
-    this.arriveYaw = b1.yaw;
+    // 降落：沿停泊朝向滑进来
+    const p2 = p3.clone().addScaledVector(inn, -Math.min(70, dist * 0.3)).add(new THREE.Vector3(0, 20, 0));
     this.path = new THREE.CubicBezierCurve3(p0, p1, p2, p3);
 
     // 云舟、玩家、甲板上的絮灵（最多 3 只），其余化为光团
@@ -144,6 +155,7 @@ export class VoyageView {
   /** tick：房主当前 tick（快照之间按真实时间外推）。返回航程进度 0..1。 */
   update(dt: number, tick: number): number {
     this.t += dt;
+    setWaterTint(null);
     const raw = Math.max(0, Math.min(1, (tick - this.depart) / Math.max(1, this.arrive - this.depart)));
     // 起飞与降落慢、巡航快
     this.k = raw < 0.5 ? 2 * raw * raw : 1 - Math.pow(-2 * raw + 2, 2) / 2;
@@ -154,17 +166,9 @@ export class VoyageView {
     if (ahead.distanceToSquared(at) > 1e-6) {
       let yaw = Math.atan2(ahead.x - at.x, ahead.z - at.z);
       const turn = Math.atan2(at.x - this.prev.x, at.z - this.prev.z) - yaw;
-      // 最后一段：悬停掉头，转到停泊朝向
-      if (k > 0.86) {
-        const e = smooth(0.86, 0.985, k);
-        let d = this.arriveYaw - yaw;
-        while (d > Math.PI) d -= Math.PI * 2;
-        while (d < -Math.PI) d += Math.PI * 2;
-        yaw += d * e;
-      }
-      this.skiff.group.rotation.set(0, yaw, THREE.MathUtils.clamp(turn * 2, -0.25, 0.25) * (k > 0.86 ? 0.3 : 1));
+      if (k > 0.97) yaw = this.arriveYaw;
+      this.skiff.group.rotation.set(0, yaw, THREE.MathUtils.clamp(turn * 2, -0.25, 0.25) * (k > 0.9 ? 0.3 : 1));
     }
-    if (k >= 0.999) this.skiff.group.rotation.set(0, this.arriveYaw, 0);
     this.prev.copy(at);
     const speed = Math.min(1, Math.sin(Math.PI * raw) * 1.4);
     this.skiff.update(this.t, speed);

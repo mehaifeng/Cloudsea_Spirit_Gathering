@@ -94,8 +94,11 @@ input[type='text']:focus { border-color: var(--stamp); outline: none; box-shadow
 .party-badge .lv { font-variant-numeric: tabular-nums; color: var(--ink-soft); font-size: 13px; }
 .party-badge .lv::before { content: 'Lv'; font-size: 11px; margin-right: 1px; }
 .party-badge:hover, .party-badge:focus-visible { outline: none; transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--stamp); border-color: var(--stamp); }
-.party-badge.weary { border-style: dashed; color: var(--ink-soft); }
-.party-badge.weary::after { content: '疲'; font-size: 12px; font-weight: 700; color: var(--bad); border: 1px solid var(--bad); border-radius: 3px; padding: 0 2px; transform: rotate(-4deg); }
+.party-badge .mini-hp { width: 28px; height: 5px; border: 1px solid var(--ink); border-radius: 2px; background: var(--paper-2); overflow: hidden; }
+.party-badge .mini-hp i { display: block; height: 100%; background: var(--good); }
+.party-badge .mini-hp.low i { background: var(--bad); }
+.party-badge.down { border-style: dashed; color: var(--ink-soft); }
+.party-badge.down::after { content: '倒'; font-size: 12px; font-weight: 700; color: var(--bad); border: 1px solid var(--bad); border-radius: 3px; padding: 0 2px; transform: rotate(-4deg); }
 #party-bar.hidden { display: none; }
 body:has(#modal:not(.hidden)) #party-bar, body:has(#modal:not(.hidden)) #hints, body:has(#modal:not(.hidden)) #prompt, body:has(#dialogue:not(.hidden)) #party-bar, body:has(#dialogue:not(.hidden)) #prompt { display: none; }
 .party-card { position: relative; background: var(--paper); background-image: var(--ruled); border: 1.5px solid var(--ink); border-radius: var(--wobble-sm); padding: 6px 12px; min-width: 100px; font-size: 14px; box-shadow: var(--shadow); }

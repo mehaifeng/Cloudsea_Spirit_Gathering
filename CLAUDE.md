@@ -65,7 +65,7 @@ prototype/      M0 单文件原型，只作参考，不再修改
   - 天象属性 = `element`：`sun` 晴 / `rain` 雨 / `wind` 风 / `thunder` 雷 / `mist` 雾
   - 云气 = `qi`，天候（战斗）= `fieldWeather`，天气（世界）= `weather`，守岛人（AI）= `keeper`，灯塔 = `lighthouse`，云主 = `cloudlord`
   - 云贝 = `shells`，灵饰 = `charm`，基因码 = `gene code`
-  - 性别 = `sex`（雄 `male` / 雌 `female`），雄性比例 = `sexRatio`；疲惫标记 = `weary`（可与其他状态并存）
+  - 性别 = `sex`（雄 `male` / 雌 `female`），雄性比例 = `sexRatio`；伤势 = `condition`（v0.7 取代疲惫 `weary`：生命 / 层数 / 异常带到下一场）
   - 大区 = `region`：晴原 `sunPlains` / 风谷 `windValley` / 雨泽 `rainMarsh` / 雷崖 `thunderCliff` / 雾海 `mistSea`
   - 稀有度 = `rarity`：常见 `common` / 少见 `uncommon` / 稀有 `rare` / 极稀 `veryRare`；形态 = `form`，种族值 = `baseStats`，零件池 = `partPool`，刷新规则 = `spawns`
   - 五项属性 = `stats`：生命 `hp` / 力量 `power` / 守护 `guard` / 灵巧 `agility` / 共鸣 `resonance`；命中 `accuracy`，闪避 `evasion`；异化 = `mutation`
@@ -75,10 +75,10 @@ prototype/      M0 单文件原型，只作参考，不再修改
   - 相克 = `counters`，相生 = `generates`（A generates B），连携 = `synergy`，本属性加成 = `affinityBonus`
   - 进化段：幼絮 `hatchling` / 成灵 `adult` / 云主形 `lord`；蛋 = `egg`；进化线 = `line`
   - 技能来源：本源 `innateSkill` / 零件 `partSkill` / 技能书 `skillBook`；技能池 `skillPool`，装备栏 `skillSlots`；轻击 `jab`，防御 `guard`
-  - 状态异常 = `ailment`（目眩 `dazzled` / 湿透 `soaked` / 失衡 `unbalanced` / 麻痹 `paralyzed` / 迷蒙 `hazed`），增减益层数 = `stage`，暴击 = `crit`，倒下 = `downed`，疲惫 = `weary`
+  - 状态异常 = `ailment`（目眩 `dazzled` / 湿透 `soaked` / 失衡 `unbalanced` / 麻痹 `paralyzed` / 迷蒙 `hazed`），增减益层数 = `stage`，暴击 = `crit`，倒下 = `downed`
   - 提灯 = `lantern`（≠ 灯塔 `lighthouse`），云舟 = `skiff`（v0.5 起取代风帆 `sail`），航行 = `voyage`，采集工具 = `gatherTool`，燃料 = `fuel`，雾浓度 = `fogLevel`
   - 播片 / 过场 = `cutscene`，镜头时间轴 = `cameraTrack`，细节层级 = `lod`，世界布局 = `worldLayout`
-  - 上船 / 下船 = `board` / `disembark`，平台（码头、栈桥、甲板）= `platform`，游泳 = `swim`，涉水 = `wade`，迫降 = `crashLanding`，战斗转场 = `battleTransition`，测试场景 = `scenario`
+  - 上船 / 下船 = `board` / `disembark`，平台（码头、栈桥、甲板）= `platform`，游泳 = `swim`，涉水 = `wade`，迫降 = `crashLanding`，战斗转场 = `battleTransition`，测试场景 = `scenario`，舷梯 = `gangway`，混沌迷雾（袭击时）= `mist spawn`，水下染色 = `waterTint`，核心塔治疗 = `coreHeal`
   - 岛核 = `islandCore`，家园岛 = `homeIsland`，漂流岛 = `driftIsle`，守岛人岛 = `keeperIsland`，集市岛 = `marketIsle`，星图 = `starChart`
   - 栖巢 = `nest`，繁殖屋 = `hatchery`，工位 = `workSlot`，蓝图 = `blueprint`，订单 = `order`，商队 = `caravan`
   - 灯露 = `lanternDew`，记忆碎片 = `memoryShard`，图鉴 = `codex`，好感度 = `affinity`，外来（导入）标记 = `foreign`

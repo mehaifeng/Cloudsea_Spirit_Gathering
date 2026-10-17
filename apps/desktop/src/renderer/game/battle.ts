@@ -17,7 +17,7 @@ import {
   type SlotRef,
   type WorldState,
 } from '@cloudsea/sim';
-import { buildIslandMesh, CreatureView, Environment, Fx, lookFromSpirit, nightFactor } from '@cloudsea/render';
+import { buildIslandMesh, CreatureView, Environment, Fx, lookFromSpirit, nightFactor, setWaterTint } from '@cloudsea/render';
 import { button, clear, elementIcon, h } from '@cloudsea/ui';
 import * as THREE from 'three';
 import type { UiRoot } from './uiRoot';
@@ -282,7 +282,7 @@ export class BattleView {
         tipped('灯露', () => ((this.sub = 'dew'), this.renderPanel()), '灯露', '用灯露邀请野生絮灵加入。对方体力越低、灯露品质越好，成功率越高。');
         tipped('逃跑', () => this.choose({ type: 'flee' }), '逃跑', '离开这场战斗。按双方的灵巧判定能否逃掉，失败会白白浪费这一回合。');
       } else if (this.state.kind !== 'scripted') {
-        tipped('认输', () => ((this.sub = 'forfeit'), this.renderPanel()), '认输', '结束这场对战，按战败处理：上过场的絮灵会疲惫。');
+        tipped('认输', () => ((this.sub = 'forfeit'), this.renderPanel()), '认输', '结束这场对战，按战败处理（没有额外惩罚，絮灵保持现在的伤势）。');
       }
       // 被看破的对手：显示它下回合要做什么
       const prepared = this.battle.preparedAi;
@@ -325,7 +325,7 @@ export class BattleView {
       row.append(button('返回', () => this.back()));
     } else if (this.sub === 'forfeit') {
       row.append(
-        h('span', {}, '认输会按战败处理：上过场的絮灵会疲惫。'),
+        h('span', {}, '认输会按战败处理：絮灵保持现在的伤势，没有额外惩罚。'),
         button('确定认输', async () => {
           this.busy = true;
           clear(this.panel);
@@ -595,7 +595,7 @@ export class BattleView {
       const s = c.spirits[id];
       if (s) lines.push(h('div', {}, `「${this.content.forms.get(s.formId)!.form.name}」加入了你的${s.state === 'party' ? '队伍' : '家园'}${s.blighted ? '（它被蚀化了，需要在净化池净化）' : ''}`));
     }
-    if (r.result === 'lose') lines.push(h('div', { class: 'muted' }, '参战的絮灵疲惫了，暂时不能出战。回到家园岛就会慢慢恢复（有栖巢快一倍、有温泉快四倍），或者喂暖心包立刻恢复——码头的商队有卖。'));
+    if (r.result === 'lose') lines.push(h('div', { class: 'muted' }, '倒下的絮灵生命为 0，暂时不能出战。回家园岛走到核心塔附近，很快就能恢复；在家园岛其他地方会慢慢恢复，或者喂暖心包立刻回满——码头的商队有卖。'));
     if (r.rescued) lines.push(h('div', { class: 'muted' }, '路过的风帆商队把你送回了家园岛。'));
     const box = h('div', { class: 'panel', style: 'width:min(560px,94vw)' }, h('h2', {}, title), ...lines, h('div', { class: 'row', style: 'margin-top:10px' }, button('继续', () => this.onFinished(), { class: 'primary' })));
     this.panel.append(box);
@@ -604,6 +604,7 @@ export class BattleView {
 
   update(dt: number): void {
     this.t += dt;
+    setWaterTint(null);
     if (this.intro < BattleView.INTRO_SECONDS) {
       this.intro += dt;
       this.placeCamera(this.intro / BattleView.INTRO_SECONDS);

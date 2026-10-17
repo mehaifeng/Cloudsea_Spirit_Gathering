@@ -428,22 +428,30 @@ export class App {
     const u = b.state.sides[1].units[0]!;
     const view = new CreatureView(lookFromSpirit(this.content, battleUnitSpirit(world, b, u)));
     const P = ex.player;
+    // 出现点：约 10 米外、不在水里，冲过来的直线离核心塔和失事的云舟都远（不穿模，v0.7）
+    const clearOf = (ax: number, az: number, bx: number, bz: number, cx: number, cz: number) => {
+      const dx = bx - ax;
+      const dz = bz - az;
+      const t = Math.max(0, Math.min(1, ((cx - ax) * dx + (cz - az) * dz) / (dx * dx + dz * dz || 1)));
+      return Math.hypot(ax + dx * t - cx, az + dz * t - cz);
+    };
+    const W = ExploreView.WRECK;
     let spot = { x: P.x + 4, z: P.z + 4, a: 0 };
-    const toCenter = Math.atan2(-P.x, -P.z);
-    for (let i = 0; i < 14; i++) {
-      const a = toCenter + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 0.45;
+    for (let i = 0; i < 24; i++) {
+      const a = Math.atan2(-P.x, -P.z) + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 0.3;
       const x = P.x + Math.sin(a) * 10;
       const z = P.z + Math.cos(a) * 10;
-      if (ex.terrain.inside(x, z, 1.5) && !ex.terrain.isWater(x, z)) {
-        spot = { x, z, a };
-        break;
-      }
+      if (!ex.terrain.inside(x, z, 1.5) || ex.terrain.isWater(x, z)) continue;
+      if (clearOf(x, z, P.x, P.z, 0, 0) < 2.6 || clearOf(x, z, P.x, P.z, W.x, W.z) < 3.2) continue;
+      spot = { x, z, a };
+      break;
     }
-    ex.addActor('ambusher', view, spot.x, spot.z, spot.a + Math.PI);
-    view.maxSpeed *= 1.8;
-    view.moveTo(P.x + Math.sin(spot.a) * 2.6, P.z + Math.cos(spot.a) * 2.6);
     P.yaw = spot.a;
     P.lookAt = { x: spot.x, z: spot.z };
+    ex.spawnFromMist('ambusher', view, spot.x, spot.z, spot.a + Math.PI, () => {
+      view.maxSpeed *= 1.8;
+      view.moveTo(P.x + Math.sin(spot.a) * 2.6, P.z + Math.cos(spot.a) * 2.6);
+    });
     const focus = () => ex.actor('ambusher')?.headPos() ?? null;
     this.playCutscene('ambush', ambushShots(ex, 'ambusher'), () => this.transitionToBattle(id, focus, () => ex.removeActor('ambusher')));
   }
@@ -581,6 +589,11 @@ export class App {
           break;
         case 'evolved':
           break;
+        case 'recovered': {
+          const s = this.world?.characters[PLAYER_ID]?.spirits[e.spiritId];
+          if (s && s.state === 'party') this.ui.toast(`${s.nickname ?? this.content.forms.get(s.formId)?.form.name ?? '絮灵'} 恢复了`);
+          break;
+        }
         case 'keeperVisit':
           if (e.playerId === PLAYER_ID) this.ui.toast(`${this.content.keepers.get(e.keeperId)?.name} 来你的岛上串门了，在码头附近`);
           break;

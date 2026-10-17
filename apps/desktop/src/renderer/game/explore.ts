@@ -32,11 +32,14 @@ import {
   lookFromSpirit,
   makeBuildingView,
   makeGatherProp,
+  makeGangway,
   makeSkiff,
+  setWaterTint,
   SKIFF_DECK_Y,
   SKIFF_GATE,
   skiffCollisionHalfWidth,
   skiffHalfWidth,
+  type GangwayView,
   type SkiffView,
   mat,
   nightFactor,
@@ -126,7 +129,9 @@ export class ExploreView {
   private coreLevel = 0;
   private readonly props = new Map<string, { node: GatherNode; view: PropView }>();
   private readonly buildings = new Map<string, { view: BuildingView; key: string; inst: BuildingInstance; foundation: THREE.Mesh | null }>();
-  private readonly creatures = new Map<string, { view: CreatureView; home: { x: number; z: number }; kind: 'wild' | 'own' | 'keeper'; timer: number; state: Spirit['state']; aboard: boolean }>();
+  private readonly creatures = new Map<string, { view: CreatureView; home: { x: number; z: number }; kind: 'wild' | 'own' | 'keeper'; timer: number; state: Spirit['state']; aboard: boolean; path: Array<{ x: number; z: number }> }>();
+  /** 舷梯（v0.7）：放在哪一舷、水平长度、落差、伸出比例（动画中）与目标。 */
+  private gangway: { view: GangwayView; side: 1 | -1; run: number; drop: number; top: number; extend: number; target: number } | null = null;
   private readonly keepers = new Map<string, HumanoidView>();
   private obstacles: Obstacle[] = [];
   private rects: RectObstacle[] = [];
@@ -163,6 +168,14 @@ export class ExploreView {
   private orb: THREE.Group | null = null;
   /** 只做表现的临时絮灵（例如首战前冲过来的蚀化絮灵）。 */
   private readonly actors = new Map<string, CreatureView>();
+  /** 水波纹（v0.7）：游泳 / 涉水时在水面上扩散的圆环。 */
+  private readonly ripples: Array<{ mesh: THREE.Mesh; t: number }> = [];
+  private rippleTimer = 0;
+  /** 队伍里有受伤的絮灵（核心塔附近会冒治疗光点）。 */
+  private partyHurt = false;
+  private lastSwim = 0;
+  /** 从混沌迷雾中凝聚出来的临时絮灵（v0.7）：进度 0..1，凝聚完成后回调。 */
+  private readonly mists = new Map<string, { t: number; dur: number; x: number; z: number; done: (() => void) | null }>();
 
   /** 远景岛：岛 id（家园岛用 'home'）→ 模型。航行时目的地的远景会被完整场景替换。 */
   readonly distant = new Map<string, THREE.Object3D>();
@@ -235,7 +248,26 @@ export class ExploreView {
       if (pl.deck && !this.onDeck(pl, l.lx, l.lz)) continue;
       h = pl.top;
     }
+    const r = this.rampHeight(x, z);
+    if (r !== null && Math.abs(r - feet) < STEP) h = Math.max(h, r);
     return h;
+  }
+
+  /** 舷梯上某点的高度（放下时）；不在舷梯上返回 null。 */
+  private rampHeight(x: number, z: number): number | null {
+    const g = this.gangway;
+    if (!g || g.extend < 0.95 || !this.skiff) return null;
+    const grp = this.skiff.view.group;
+    const yaw = grp.rotation.y;
+    const dx = x - grp.position.x;
+    const dz = z - grp.position.z;
+    const lx = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+    const lz = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+    const gz = (SKIFF_GATE.z0 + SKIFF_GATE.z1) / 2;
+    if (Math.abs(lz - gz) > 0.42) return null;
+    const a = lx * g.side - (skiffHalfWidth(gz) - 0.02);
+    if (a < -0.25 || a > g.run + 0.05) return null;
+    return g.top - g.drop * Math.max(0, Math.min(1, a / g.run));
   }
 
   /** 玩家用的地面（考虑平台、乘坐）。 */
@@ -254,6 +286,8 @@ export class ExploreView {
         const l = this.platformLocal(pl, x, z);
         if (l && (!pl.deck || this.onDeck(pl, l.lx, l.lz))) h = Math.max(h, pl.top);
       }
+      const r = aboard ? this.rampHeight(x, z) : null;
+      if (r !== null) h = Math.max(h, r);
       return h;
     };
   }
@@ -596,8 +630,10 @@ export class ExploreView {
       const spawnZ = w.kind === 'own' && c.party.includes(w.spirit.id) ? this.player.z - 1 : w.z;
       view.setPosition(spawnX, spawnZ, Math.random() * 6);
       this.root.add(view.group);
-      this.creatures.set(id, { view, home: { x: w.x, z: w.z }, kind: w.kind, timer: Math.random() * 3, state: w.spirit.state, aboard: false });
+      this.creatures.set(id, { view, home: { x: w.x, z: w.z }, kind: w.kind, timer: Math.random() * 3, state: w.spirit.state, aboard: false, path: [] });
     }
+
+    this.partyHurt = c.party.some((id) => !!c.spirits[id]?.condition);
 
     // 可交互对象
     const list: Interactable[] = [];
@@ -746,47 +782,141 @@ export class ExploreView {
     return this.skiff?.view.group.rotation.y ?? 0;
   }
 
-  /** 登船口外侧（码头 / 栈桥上）、登船口内侧（甲板上）、甲板座位（全部是本岛坐标）。 */
-  boardingPoints(): { outside: { x: number; z: number }; inside: { x: number; z: number }; seat: { x: number; z: number } } {
+  /** 放舷梯的一舷（v0.7）：两舷都有登船口，选外侧落在码头 / 栈桥上（或离它最近）的那一舷。 */
+  private chooseGateSide(): 1 | -1 {
     const gz = (SKIFF_GATE.z0 + SKIFF_GATE.z1) / 2;
     const hw = skiffHalfWidth(gz);
+    let best: 1 | -1 = -1;
+    let bestScore = Infinity;
+    for (const side of [-1, 1] as const) {
+      const p = this.skiffToLocal(side * (hw + 1.4), gz);
+      let score = Math.hypot(p.x, p.z) * 0.01; // 没有码头时：朝岛内那一侧
+      if (this.staticPlatforms.length) {
+        score = Math.min(...this.staticPlatforms.map((pl) => (this.platformLocal(pl, p.x, p.z) ? 0 : Math.hypot(p.x - pl.x, p.z - pl.z))));
+      }
+      if (score < bestScore) {
+        bestScore = score;
+        best = side;
+      }
+    }
+    return best;
+  }
+
+  /** 舷梯相关的点（本岛坐标）：舷梯脚外侧、舷梯脚、登船口内（甲板上）、船头座位。 */
+  boardingPoints(side: 1 | -1 = this.gangway?.side ?? this.chooseGateSide()): { approach: { x: number; z: number }; foot: { x: number; z: number }; inside: { x: number; z: number }; seat: { x: number; z: number } } {
+    const gz = (SKIFF_GATE.z0 + SKIFF_GATE.z1) / 2;
+    const hw = skiffHalfWidth(gz);
+    const run = this.gangway?.run ?? 1.6;
     const seat = this.skiff!.view.seats[0]!;
     return {
-      outside: this.skiffToLocal(SKIFF_GATE.side * (hw + 0.75), gz),
-      inside: this.skiffToLocal(SKIFF_GATE.side * (hw - 0.4), gz),
+      approach: this.skiffToLocal(side * (hw + run + 0.9), gz),
+      foot: this.skiffToLocal(side * (hw + run - 0.15), gz),
+      inside: this.skiffToLocal(side * (hw - 0.45), gz),
       seat: this.skiffToLocal(seat.x, seat.z),
     };
   }
 
   /**
-   * 上船（v0.6）：沿码头 / 栈桥走到登船口外 → 跳上甲板 → 走到船头的位置站好；
-   * 队伍絮灵跟着蹦上来。纯表演，结束后再发出航意图。
+   * 放下舷梯（v0.7）：落差 = 甲板高度 − 舷梯脚处的地面（码头 / 栈桥 / 草地），
+   * 水平长度按约 28° 的坡度自适应（1–3.2 米）。返回放好时的 Promise。
+   */
+  private lowerGangway(side: 1 | -1): Promise<void> {
+    const sk = this.skiff!;
+    if (!this.gangway) {
+      const view = makeGangway();
+      this.gangway = { view, side, run: 1.6, drop: 0.5, top: 0, extend: 0, target: 0 };
+    }
+    const g = this.gangway;
+    if (g.view.group.parent !== sk.view.group) sk.view.group.add(g.view.group);
+    const gz = (SKIFF_GATE.z0 + SKIFF_GATE.z1) / 2;
+    const hw = skiffHalfWidth(gz);
+    const top = this.skiffPlatform!.top;
+    let run = 1.6;
+    for (let i = 0; i < 3; i++) {
+      const f = this.skiffToLocal(side * (hw + run), gz);
+      const drop = Math.max(0.05, top - this.groundAt(f.x, f.z, top - 0.3));
+      run = clamp(drop / Math.tan((28 * Math.PI) / 180), 1, 3.2);
+    }
+    const foot = this.skiffToLocal(side * (hw + run), gz);
+    g.side = side;
+    g.run = run;
+    g.top = top;
+    g.drop = Math.max(0.05, top - this.groundAt(foot.x, foot.z, top - 0.3));
+    g.view.group.position.set(side * (hw - 0.02), SKIFF_DECK_Y, gz);
+    g.view.group.rotation.y = side > 0 ? 0 : Math.PI;
+    g.target = 1;
+    return new Promise((r) => {
+      const wait = () => (g.extend >= 1 ? r() : setTimeout(wait, 50));
+      wait();
+    });
+  }
+
+  private raiseGangway(): Promise<void> {
+    const g = this.gangway;
+    if (!g) return Promise.resolve();
+    g.target = 0;
+    return new Promise((r) => {
+      const wait = () => (g.extend <= 0 ? r() : setTimeout(wait, 50));
+      wait();
+    });
+  }
+
+  /** 让队伍絮灵沿一串路点走（上下船时跟着走舷梯）。 */
+  private partyFollow(paths: (i: number) => Array<{ x: number; z: number }>): void {
+    let i = 0;
+    for (const e of this.creatures.values()) {
+      if (e.kind !== 'own' || e.state !== 'party') continue;
+      const p = paths(i++);
+      if (!p.length) {
+        e.view.group.visible = false;
+        continue;
+      }
+      e.aboard = true;
+      e.path = p;
+    }
+  }
+
+  private partyArrived(): boolean {
+    for (const e of this.creatures.values()) if (e.aboard && e.path.length) return false;
+    return true;
+  }
+
+  private async waitParty(ms: number): Promise<void> {
+    const end = performance.now() + ms;
+    while (!this.partyArrived() && performance.now() < end) await new Promise((r) => setTimeout(r, 60));
+  }
+
+  /**
+   * 上船（v0.7）：走到靠码头一舷 → 舷梯放下 → 沿舷梯走上甲板、走到船头站好；
+   * 队伍絮灵跟着走舷梯上来坐好 → 收起舷梯。纯表演，结束后再发出航意图。
    */
   async board(): Promise<void> {
     if (!this.skiff || this.skiff.wrecked) return;
     const P = this.player;
-    const pts = this.boardingPoints();
+    const side = this.chooseGateSide();
+    const lowering = this.lowerGangway(side);
+    const pts = this.boardingPoints(side);
     const yaw = this.skiffYaw();
-    const towardShip = yaw + (SKIFF_GATE.side < 0 ? Math.PI / 2 : -Math.PI / 2);
-    const far = Math.hypot(pts.outside.x - P.x, pts.outside.z - P.z) > 6;
-    await this.walkTo(pts.outside.x, pts.outside.z, { run: far, faceYaw: towardShip, timeout: 8 });
-    await this.walkTo(pts.inside.x, pts.inside.z, { jumpAt: 1.6, jumpStrength: 6, timeout: 3 });
-    // 絮灵：一只接一只蹦上甲板
-    let i = 0;
-    for (const e of this.creatures.values()) {
-      if (e.kind !== 'own' || e.state !== 'party') continue;
-      const seat = this.skiff.view.seats[1 + i];
-      i++;
-      if (!seat) {
-        e.view.group.visible = false;
-        continue;
-      }
-      const at = this.skiffToLocal(seat.x, seat.z);
-      e.aboard = true;
-      e.view.hop(5);
-      e.view.moveTo(at.x, at.z);
-    }
+    const far = Math.hypot(pts.approach.x - P.x, pts.approach.z - P.z) > 6;
+    await this.walkTo(pts.approach.x, pts.approach.z, { run: far, timeout: 8 });
+    await lowering;
+    await this.walkTo(pts.foot.x, pts.foot.z, { timeout: 2.5 });
+    await this.walkTo(pts.inside.x, pts.inside.z, { timeout: 3 });
+    const seats = this.skiff.view.seats;
+    this.partyFollow((i) => {
+      const s = seats[1 + i];
+      return s ? [pts.approach, pts.foot, pts.inside, this.skiffToLocal(s.x, s.z)] : [];
+    });
     await this.walkTo(pts.seat.x, pts.seat.z, { faceYaw: yaw, timeout: 3 });
+    await this.waitParty(3000);
+    await this.raiseGangway();
+  }
+
+  /** 航行目的地：调整停泊朝向（降落时船头朝向哪边就停成哪边，v0.7 不再掉头）。 */
+  setBerthYaw(yaw: number): void {
+    if (!this.skiff || this.skiff.wrecked || !this.skiffPlatform) return;
+    this.skiff.view.group.rotation.y = yaw;
+    this.skiffPlatform = { ...this.skiffPlatform, yaw };
   }
 
   /** 航行目的地：玩家先站在停泊云舟的甲板座位上，镜头对准（降落后从这里下船）。 */
@@ -795,18 +925,19 @@ export class ExploreView {
     const seat = this.boardingPoints().seat;
     this.player.setPosition(seat.x, seat.z, this.skiffYaw(), this.skiffPlatform.top);
     this.camT.set(seat.x, this.skiffPlatform.top + 1.15, seat.z);
-    // 镜头在船头（海）那一侧，看向岛内：下船后往岛上走，正好在画面里
-    this.camYaw = this.skiffYaw();
+    // 镜头在离岛心远的一侧（海那边）看向岛内：下船后往岛上走，正好在画面里
+    const g = this.skiff.view.group.position;
+    this.camYaw = Math.atan2(g.x, g.z);
     this.camPitch = 0.38;
     this.camDist = 9;
   }
 
-  /** 下船（v0.6）：从船头位置走到登船口 → 跳到栈桥 / 码头上 → 往岸上走两步。 */
+  /** 下船（v0.7）：放下靠码头 / 栈桥一舷的舷梯 → 沿舷梯走下来 → 往岸上走两步；絮灵跟着 → 收起舷梯。 */
   async disembark(): Promise<void> {
     if (!this.skiff || this.skiff.wrecked) return;
     const P = this.player;
-    const pts = this.boardingPoints();
-    const seat = pts.seat;
+    const side = this.chooseGateSide();
+    const seat = this.boardingPoints(side).seat;
     P.setPosition(seat.x, seat.z, this.skiffYaw(), this.skiffPlatform!.top);
     let i = 0;
     for (const e of this.creatures.values()) {
@@ -816,17 +947,21 @@ export class ExploreView {
       if (!s) continue;
       const at = this.skiffToLocal(s.x, s.z);
       e.aboard = true;
+      e.path = [];
       e.view.setPosition(at.x, at.z, this.skiffYaw());
     }
-    await new Promise((r) => setTimeout(r, 250));
+    await this.lowerGangway(side);
+    const pts = this.boardingPoints(side);
     await this.walkTo(pts.inside.x, pts.inside.z, { timeout: 3 });
-    const away = { x: pts.outside.x + (pts.outside.x - pts.inside.x) * 1.6, z: pts.outside.z + (pts.outside.z - pts.inside.z) * 1.6 };
-    await this.walkTo(away.x, away.z, { jumpAt: 1.9, jumpStrength: 3.6, timeout: 3 });
+    this.partyFollow(() => [pts.inside, pts.foot, pts.approach]);
+    await this.walkTo(pts.foot.x, pts.foot.z, { timeout: 3 });
+    await this.walkTo(pts.approach.x, pts.approach.z, { timeout: 2.5 });
+    await this.waitParty(2500);
     for (const e of this.creatures.values()) {
-      if (!e.aboard) continue;
       e.aboard = false;
-      e.view.hop(4);
+      e.path = [];
     }
+    await this.raiseGangway();
   }
 
   // ---------------------------------------------------------------- 表演用的临时絮灵
@@ -838,11 +973,22 @@ export class ExploreView {
     this.actors.set(id, view);
   }
 
+  /**
+   * 混沌迷雾（v0.7，首战袭击）：一团翻滚的暗紫色雾先出现，絮灵在雾中由小变大地凝聚出来，
+   * 凝聚完成后调用 onReady（例如开始冲向玩家）。
+   */
+  spawnFromMist(id: string, view: CreatureView, x: number, z: number, yaw: number, onReady: () => void, dur = 1.6): void {
+    this.addActor(id, view, x, z, yaw);
+    view.group.scale.setScalar(0.01);
+    this.mists.set(id, { t: 0, dur, x, z, done: onReady });
+  }
+
   actor(id: string): CreatureView | undefined {
     return this.actors.get(id);
   }
 
   removeActor(id: string): void {
+    this.mists.delete(id);
     const v = this.actors.get(id);
     if (!v) return;
     this.root.remove(v.group);
@@ -977,6 +1123,14 @@ export class ExploreView {
     }
     P.lookAt = best;
     P.update(dt, t, this.playerGround);
+    setWaterTint(this.root.position.y + WATER_LEVEL);
+    this.updateWaterFx(dt, depth);
+    // 核心塔附近：受伤的队伍絮灵身上升起暖色光点（与 sim 的 CORE_HEAL 半径一致）
+    if (this.isHome && this.partyHurt && Math.hypot(P.x, P.z) <= 6) {
+      for (const e of this.creatures.values()) {
+        if (e.kind === 'own' && e.state === 'party' && Math.random() < dt * 6) this.fx.spawn('spark', e.view.headPos().sub(this.root.position), 1, { size: 0.22, vy: 1.1, life: 0.9, spread: 0.6, color: 0xffd59a });
+      }
+    }
 
     // 发送位置（节流）
     this.moveSentAt += dt;
@@ -993,7 +1147,12 @@ export class ExploreView {
     for (const e of this.creatures.values()) {
       const v = e.view;
       if (e.aboard) {
-        // 上船 / 下船途中：自己的落点由 board() / disembark() 给
+        // 上船 / 下船：沿路点走（舷梯）
+        const wp = e.path[0];
+        if (wp) {
+          if (Math.hypot(wp.x - v.x, wp.z - v.z) < 0.3) e.path.shift();
+          else v.moveTo(wp.x, wp.z);
+        }
       } else if (e.kind === 'own' && e.state === 'party') {
         const slot = followIdx++;
         const bx = P.x - Math.sin(P.yaw) * (1.4 + slot * 0.6) + Math.cos(P.yaw) * (slot - 1) * 0.9;
@@ -1025,6 +1184,30 @@ export class ExploreView {
       v.update(dt, t, e.aboard ? groundAboard : groundFloat);
     }
     for (const v of this.actors.values()) v.update(dt, t, groundFloat);
+    for (const [id, m] of this.mists) {
+      m.t += dt;
+      const k = Math.min(1, m.t / m.dur);
+      const v = this.actors.get(id);
+      const gy = this.ground(m.x, m.z);
+      // 雾：开始浓、凝聚完成后慢慢散去
+      const density = k < 1 ? 1 : Math.max(0, 1 - (m.t - m.dur) / 1.2);
+      if (Math.random() < dt * 40 * density) {
+        const a = Math.random() * Math.PI * 2;
+        const r = 0.4 + Math.random() * 1.2 * (1 - k * 0.5);
+        this.fx.spawn('puff', new THREE.Vector3(m.x + Math.cos(a) * r, gy + 0.2 + Math.random() * 1.2, m.z + Math.sin(a) * r), 1, { size: 1.1 + Math.random() * 0.8, vy: 0.3, life: 1.4, spread: 0.6, color: Math.random() < 0.5 ? 0x3a2f4a : 0x5b4a6e });
+      }
+      if (Math.random() < dt * 10 * density) this.fx.spawn('spark', new THREE.Vector3(m.x, gy + 0.6, m.z), 1, { size: 0.2, vy: 0.8, life: 0.6, spread: 1.2, color: 0xa77be8 });
+      if (v) {
+        const e = k * k * (3 - 2 * k);
+        v.group.scale.setScalar(Math.max(0.01, e));
+      }
+      if (k >= 1 && m.done) {
+        const cb = m.done;
+        m.done = null;
+        cb();
+      }
+      if (density <= 0) this.mists.delete(id);
+    }
     for (const k of this.keepers.values()) {
       k.lookAt = Math.hypot(P.x - k.x, P.z - k.z) < 6 ? { x: P.x, z: P.z } : null;
       if (k.lookAt) k.yaw += angDiff(k.yaw, Math.atan2(P.x - k.x, P.z - k.z)) * Math.min(1, dt * 2);
@@ -1032,6 +1215,11 @@ export class ExploreView {
     }
     for (const { view } of this.props.values()) view.update(t);
     this.skiff?.view.update(t, 0);
+    const gw = this.gangway;
+    if (gw) {
+      gw.extend = gw.target > gw.extend ? Math.min(gw.target, gw.extend + dt * 1.8) : Math.max(gw.target, gw.extend - dt * 2.2);
+      gw.view.set(gw.run, gw.drop, gw.extend);
+    }
     if (this.skiff?.wrecked && Math.random() < dt * 3) {
       const g = this.skiff.view.group.position;
       this.fx.spawn('puff', new THREE.Vector3(g.x, g.y + 1.4, g.z), 1, { size: 0.9, vy: 0.9, life: 2.2, spread: 0.4, color: 0x9a9298 });
@@ -1078,6 +1266,51 @@ export class ExploreView {
     this.updateNearest();
   }
 
+  /** 入水溅起水花；游泳 / 涉水时身边一圈圈的波纹（v0.7）。 */
+  private updateWaterFx(dt: number, depth: number): void {
+    const P = this.player;
+    const at = new THREE.Vector3(P.x, WATER_LEVEL + 0.03, P.z);
+    if (P.swim > 0.5 && this.lastSwim <= 0.5) {
+      this.fx.spawn('puff', at.clone().add(new THREE.Vector3(0, 0.1, 0)), 14, { size: 0.45, vy: 2.2, life: 0.8, spread: 1.6, color: 0xeaf6ff });
+      this.spawnRipple(P.x, P.z, 1.4);
+    }
+    this.lastSwim = P.swim;
+    const wet = depth > 0.12 && !P.airborne;
+    if (wet) {
+      this.rippleTimer -= dt;
+      const moving = P.speed > 0.4;
+      if (this.rippleTimer <= 0) {
+        this.spawnRipple(P.x, P.z, P.swim > 0.5 ? 1 : 0.6);
+        this.rippleTimer = moving ? 0.35 : 1.1;
+        if (moving) this.fx.spawn('puff', at, P.swim > 0.5 ? 3 : 2, { size: 0.25, vy: 1.2, life: 0.5, spread: 0.6, color: 0xeaf6ff });
+      }
+    }
+    for (let i = this.ripples.length - 1; i >= 0; i--) {
+      const r = this.ripples[i]!;
+      r.t += dt;
+      const k = r.t / 1.6;
+      r.mesh.scale.setScalar(0.3 + k * 2.2 * (r.mesh.userData['size'] as number));
+      (r.mesh.material as THREE.MeshBasicMaterial).opacity = 0.5 * (1 - k);
+      if (k >= 1) {
+        this.root.remove(r.mesh);
+        (r.mesh.material as THREE.Material).dispose();
+        this.ripples.splice(i, 1);
+      }
+    }
+  }
+
+  private static rippleGeo = new THREE.RingGeometry(0.42, 0.5, 24).rotateX(-Math.PI / 2);
+
+  private spawnRipple(x: number, z: number, size: number): void {
+    if (this.ripples.length > 14) return;
+    const m = new THREE.Mesh(ExploreView.rippleGeo, new THREE.MeshBasicMaterial({ color: 0xf2faff, transparent: true, opacity: 0.5, depthWrite: false }));
+    m.position.set(x, WATER_LEVEL + 0.04, z);
+    m.userData['size'] = size;
+    m.renderOrder = 4;
+    this.root.add(m);
+    this.ripples.push({ mesh: m, t: 0 });
+  }
+
   /**
    * 平台碰撞：在船身下方 → 船身是墙；站在甲板上 → 栏杆挡着，只有登船口能出去。
    */
@@ -1089,8 +1322,8 @@ export class ExploreView {
       const onTop = pl.deck ? P.feetY >= pl.top - 0.05 : P.feetY > pl.top - STEP;
       if (!onTop) {
         if (!l) continue;
-        // 上船时跳过船舷
-        if (this.autopilot?.jumped && P.airborne) continue;
+        // 在舷梯上：不算撞船
+        if (this.rampHeight(P.x, P.z) !== null) continue;
         // 从下面撞上船身：按船舷轮廓推出去
         const half = pl.deck ? skiffCollisionHalfWidth(l.lz) + 0.3 : pl.hw + 0.3;
         if (Math.abs(l.lx) < half && Math.abs(l.lz) < pl.hd + 0.3) {
@@ -1112,7 +1345,11 @@ export class ExploreView {
       const lp = this.platformLocal(pl, prev.x, prev.z);
       if (!lp || !this.onDeck(pl, lp.lx, lp.lz)) continue;
       const lNow = this.platformLocal(pl, P.x, P.z, 2) ?? lp;
-      const inGate = Math.sign(lNow.lx) === SKIFF_GATE.side && lNow.lz > SKIFF_GATE.z0 + 0.1 && lNow.lz < SKIFF_GATE.z1 - 0.1;
+      // 只有放下舷梯的那一舷登船口能出去
+      const gwSide = this.gangway && this.gangway.extend >= 0.95 ? this.gangway.side : 0;
+      const inGateZ = lNow.lz > SKIFF_GATE.z0 + 0.1 && lNow.lz < SKIFF_GATE.z1 - 0.1;
+      // 跳着从登船口出去也行（开场跳下失事的云舟）
+      const inGate = inGateZ && ((gwSide !== 0 && Math.sign(lNow.lx) === gwSide) || (!!this.autopilot?.jumped && P.airborne));
       const lim = skiffHalfWidth(lNow.lz) - 0.25;
       let lx = lNow.lx;
       let lz = clamp(lNow.lz, -1.95, 1.6);
