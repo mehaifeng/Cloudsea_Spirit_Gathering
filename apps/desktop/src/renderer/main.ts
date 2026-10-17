@@ -1,3 +1,4 @@
+import './fonts.css';
 import './styles.css';
 import { App } from './game/app';
 

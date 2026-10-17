@@ -5,9 +5,15 @@ export default defineConfig({
   root: fileURLToPath(new URL('./src/renderer', import.meta.url)),
   // 打包后用 file:// 加载，资源路径必须是相对的
   base: './',
+  resolve: {
+    // 字体文件（fonts.css 里用 @fonts/... 引用，见 scripts/fonts.mjs）
+    alias: { '@fonts': fileURLToPath(new URL('./node_modules/@fontsource', import.meta.url)) },
+  },
   build: {
     outDir: fileURLToPath(new URL('./dist/renderer', import.meta.url)),
     emptyOutDir: true,
+    // 不把小文件内联成 data: URI（内容安全策略只允许本地文件；字体切片都要是真文件）
+    assetsInlineLimit: 0,
     // three.js 单包约 600 kB，桌面端本地加载，不必拆包
     chunkSizeWarningLimit: 1500,
   },
