@@ -6,6 +6,7 @@ import { makeSpirit } from '../testing';
 import { createCharacter, createWorld, homeIslandId, joinWorld } from './create';
 import { applyIntent, type Intent } from './intents';
 import { gatherNodes } from './layout';
+import { sailBlocked } from './voyage';
 import { loadCharacter, loadWorld, saveWorld, SaveError, __migrate } from './save';
 import type { WorldState } from './state';
 import { advanceWorld } from './tick';
@@ -111,6 +112,9 @@ describe('开局与采集', () => {
     act(w, { type: 'sail', islandId: 'wheatSlope' });
     expect(applyIntent(content, w, 'p1', { type: 'sail', islandId: 'mistHollow' }).error).toMatch(/提灯/);
     expect(applyIntent(content, w, 'p1', { type: 'sail', islandId: 'brookIsle' }).error).toMatch(/燃料/);
+    // 客户端预检与意图用同一套判定
+    expect(sailBlocked(content, w.players['p1']!, w.characters['p1']!, 'p1', 'brookIsle')).toMatch(/燃料/);
+    expect(sailBlocked(content, w.players['p1']!, w.characters['p1']!, 'p1', 'wheatSlope')).toMatch(/已经在/);
     w.characters['p1']!.backpack['lanternFuel'] = 3;
     act(w, { type: 'sail', islandId: 'brookIsle' });
     expect(w.characters['p1']!.backpack['lanternFuel']).toBe(2);

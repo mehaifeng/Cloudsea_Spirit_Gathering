@@ -34,7 +34,7 @@ import { AFFINITY, changeAffinity, giftKeeper, talkToKeeper } from './keeper';
 import { arrivalPoint, gatherNodes, HOME_DOCK } from './layout';
 import type { CharacterState, PlayerRuntime, Rotation, WorldState } from './state';
 import { clockAt, dayOf, TICKS_PER_DAY, TICKS_PER_SECOND } from './time';
-import { VOYAGE_HURRY_REMAIN, voyageTicks } from './voyage';
+import { sailBlocked, VOYAGE_HURRY_REMAIN, voyageTicks } from './voyage';
 import { weatherAt } from './weather';
 import { refreshWild } from './wild';
 
@@ -142,17 +142,11 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
     }
 
     case 'sail': {
-      if (inBattle) return fail('战斗中不能出航');
+      const blocked = sailBlocked(content, p, c, playerId, intent.islandId);
+      if (blocked) return fail(blocked);
       const to = intent.islandId === 'home' ? homeIslandId(playerId) : intent.islandId;
-      if (to === p.islandId) return fail('已经在这座岛上了');
-      if (to !== homeIslandId(playerId)) {
-        const island = content.islands.get(to);
-        if (!island) return fail('没有这座岛');
-        if (c.tools.skiff < island.skiffLevel) return fail(`需要 ${island.skiffLevel} 级云舟`);
-        if (c.tools.lantern < island.fogLevel) return fail(`雾太浓了，需要 ${island.fogLevel} 级提灯`);
-        if (island.fogLevel > 0 && (c.backpack['lanternFuel'] ?? 0) < island.fogLevel) return fail(`提灯燃料不够（需要 ${island.fogLevel}）`);
-        if (island.fogLevel > 0) removeItems(c.backpack, 'lanternFuel', island.fogLevel);
-      }
+      const island = content.islands.get(to);
+      if (island && island.fogLevel > 0) removeItems(c.backpack, 'lanternFuel', island.fogLevel);
       const ticks = voyageTicks(content, p.islandId, to, c.tools.skiff);
       p.voyage = { from: p.islandId, to, departTick: world.tick, arriveTick: world.tick + ticks };
       events.push({ t: 'voyageStart', playerId, from: p.islandId, to, departTick: world.tick, arriveTick: world.tick + ticks });

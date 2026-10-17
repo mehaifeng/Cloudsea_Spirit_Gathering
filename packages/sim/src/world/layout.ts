@@ -24,7 +24,7 @@ export function homeTerrain(seed: number, coreLevel: number): Terrain {
       { x: 0, z: 0, radius: 9, height: 0.2 },
       { x: HOME_DOCK.x, z: HOME_DOCK.z, radius: 4.5, height: 0.15 },
     ],
-    ponds: [{ x: Math.cos(a) * pondR, z: Math.sin(a) * pondR * 0.6 - 3, radius: 2.8, depth: 0.7 }],
+    ponds: [{ x: Math.cos(a) * pondR, z: Math.sin(a) * pondR * 0.6 - 3, radius: 2.8, depth: 1.8 }],
   });
 }
 
@@ -41,7 +41,7 @@ function themeFeatures(island: Island): Pick<TerrainParams, 'hills' | 'ponds' | 
           { ...at(R * 0.35, a), spread: R * 6, height: 2.4 },
           { ...at(R * 0.4, a + 2.2), spread: R * 4, height: 1.6 },
         ],
-        ponds: [{ ...at(R * 0.38, a + 4.1), radius: 3.2, depth: 0.8 }],
+        ponds: [{ ...at(R * 0.38, a + 4.1), radius: 3.2, depth: 1.6 }],
       };
     }
     case 'brook': {
@@ -63,7 +63,7 @@ function themeFeatures(island: Island): Pick<TerrainParams, 'hills' | 'ponds' | 
     case 'valley': {
       // 一圈山围着低洼的谷地，谷底有一汪雾泉
       const hills = Array.from({ length: 5 }, (_, i) => ({ ...at(R * 0.6, (i / 5) * Math.PI * 2 + rng.next() * 0.5), spread: R * 3, height: 3.8 + rng.next() * 1.5 }));
-      return { hills, ponds: [{ x: 0, z: -R * 0.1, radius: 3.6, depth: 0.9 }] };
+      return { hills, ponds: [{ x: 0, z: -R * 0.1, radius: 3.6, depth: 1.9 }] };
     }
     case 'farm':
       return { ponds: [{ ...at(R * 0.55, -0.9), radius: 2.4, depth: 0.6 }] };

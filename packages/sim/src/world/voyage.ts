@@ -2,7 +2,7 @@ import { HOME_CHART_POS, type ContentDb } from '@cloudsea/content';
 import { homeIslandId } from './create';
 import type { WorldEvent } from './events';
 import { arrivalPoint, HOME_DOCK, worldPosition } from './layout';
-import type { PlayerRuntime, WorldState } from './state';
+import type { CharacterState, PlayerRuntime, WorldState } from './state';
 import { TICKS_PER_SECOND } from './time';
 import { refreshWild } from './wild';
 
@@ -64,4 +64,23 @@ export function tickVoyages(content: ContentDb, world: WorldState, events: World
     landAt(content, world, p, playerId, v.to);
     events.push({ t: 'sailed', playerId, islandId: v.to });
   }
+}
+
+/**
+ * 能不能出航；不能时返回原因（v0.6：客户端先用它预检，通过后才播上船动画再发意图）。
+ * 纯函数，不改状态；`sail` 意图里用同一套判定。
+ */
+export function sailBlocked(content: ContentDb, p: Readonly<PlayerRuntime>, c: Readonly<CharacterState>, playerId: string, islandId: string): string | null {
+  if (p.battleId !== null) return '战斗中不能出航';
+  if (p.voyage) return '正在航行中';
+  const to = islandId === 'home' ? homeIslandId(playerId) : islandId;
+  if (to === p.islandId) return '已经在这座岛上了';
+  if (to !== homeIslandId(playerId)) {
+    const island = content.islands.get(to);
+    if (!island) return '没有这座岛';
+    if (c.tools.skiff < island.skiffLevel) return `需要 ${island.skiffLevel} 级云舟`;
+    if (c.tools.lantern < island.fogLevel) return `雾太浓了，需要 ${island.fogLevel} 级提灯`;
+    if (island.fogLevel > 0 && (c.backpack['lanternFuel'] ?? 0) < island.fogLevel) return `提灯燃料不够（需要 ${island.fogLevel}）`;
+  }
+  return null;
 }
