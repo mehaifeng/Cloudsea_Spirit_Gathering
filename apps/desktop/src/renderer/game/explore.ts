@@ -1,7 +1,8 @@
-import { GATHER_YIELD, type ContentDb, type Island } from '@cloudsea/content';
+import { GATHER_YIELD, HOME_CHART_POS, type ContentDb, type Island } from '@cloudsea/content';
 import {
   arrivalPoint,
   clockAt,
+  worldPosition,
   foundationHeight,
   footprint,
   gatherNodes,
@@ -18,6 +19,7 @@ import {
 } from '@cloudsea/sim';
 import {
   angDiff,
+  buildIslandLod,
   buildIslandMesh,
   clamp,
   CreatureView,
@@ -55,6 +57,14 @@ interface Obstacle {
   r: number;
 }
 
+/** 建筑的矩形碰撞（中心 + 半宽 / 半深，已按旋转交换）。 */
+interface RectObstacle {
+  x: number;
+  z: number;
+  hw: number;
+  hd: number;
+}
+
 const HOME_REGION = 'sunPlains' as const;
 
 /** 一座岛的场景：地形、采集点、建筑、野生絮灵、自家絮灵、守岛人、玩家。 */
@@ -73,6 +83,7 @@ export class ExploreView {
   private readonly creatures = new Map<string, { view: CreatureView; home: { x: number; z: number }; kind: 'wild' | 'own' | 'keeper'; timer: number; state: Spirit['state'] }>();
   private readonly keepers = new Map<string, HumanoidView>();
   private obstacles: Obstacle[] = [];
+  private rects: RectObstacle[] = [];
   private readonly glowTex = glowTexture();
   camYaw = 0.45;
   camPitch = 0.42;
@@ -81,6 +92,7 @@ export class ExploreView {
   private moveSentAt = 0;
   private lastSent = { x: 0, z: 0, yaw: 0 };
   nearest: Interactable | null = null;
+  private lastDry = { x: 0, z: 0 };
   private interactables: Interactable[] = [];
   /** 额外的交互点（新手引导用）。 */
   extraInteractables: Interactable[] = [];
@@ -94,14 +106,16 @@ export class ExploreView {
     const p = world.players[PLAYER_ID]!;
     this.islandId = p.islandId;
     this.island = content.islands.get(p.islandId) ?? null;
-    this.env = new Environment(this.scene);
+    this.env = new Environment(this.scene, { farIslands: false });
     this.fx = new Fx(this.scene);
     const c = world.characters[PLAYER_ID]!;
     this.player = new HumanoidView({ ...c.appearance, lantern: true }, this.glowTex);
     this.player.setPosition(p.x, p.z, p.yaw);
+    this.lastDry = { x: p.x, z: p.z };
     this.scene.add(this.player.group);
     this.lastSent = { x: p.x, z: p.z, yaw: p.yaw };
     this.rebuildTerrain(world);
+    this.addDistantIslands(world);
     this.camT.set(p.x, this.terrain.height(p.x, p.z) + 1.15, p.z);
     this.camYaw = p.yaw + Math.PI;
     this.sync(world);
@@ -156,19 +170,41 @@ export class ExploreView {
     this.scene.add(this.islandMesh);
   }
 
+  /** 远处的浮岛 = 星图上的其他岛，按世界布局摆在真实的相对位置（DESIGN 3.6，v0.5）。 */
+  private addDistantIslands(world: Readonly<WorldState>): void {
+    const here = worldPosition(this.island, HOME_CHART_POS);
+    const place = (terrain: Terrain, pos: { x: number; y: number; z: number }, seed: number) => {
+      const dx = pos.x - here.x;
+      const dz = pos.z - here.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 1) return;
+      const lod = buildIslandLod(terrain, dist < 260 ? 'mid' : 'far', seed);
+      lod.position.set(dx, pos.y - here.y, dz);
+      this.scene.add(lod);
+    };
+    for (const isl of this.content.islands.values()) {
+      if (isl.id === this.islandId) continue;
+      place(islandTerrain(isl), worldPosition(isl, HOME_CHART_POS), isl.seed);
+    }
+    if (!this.isHome) {
+      const home = world.homes[PLAYER_ID]!;
+      place(homeTerrain(home.seed, home.coreLevel), { x: 0, y: 0, z: 0 }, home.seed);
+    }
+  }
+
   /** 守岛人岛的房子与陈设（守岛人岛本身是抽象模拟，到访时按规则实例化，DESIGN 11.7）。 */
   private buildKeeperHome(keeperId: string): void {
     const layout: Array<[string, number, number, number, number]> =
       keeperId === 'aHe'
-        ? [['nest', -4, -3, 2, 2], ['workshop', 3.5, -4, 3, 3], ['field', -6, 1.5, 2, 2], ['field', -3.5, 1.5, 2, 2], ['field', -6, 4, 2, 2], ['lamp', 0, -1.5, 1, 1], ['flowerbed', 1.5, 2.5, 1, 1]]
-        : [['nest', -3, -3.5, 2, 2], ['lamp', -1, 1, 1, 1], ['lamp', 3, 1, 1, 1], ['lamp', 1, -2.5, 1, 1], ['fence', 4.5, -2, 1, 1], ['fence', 4.5, -1, 1, 1], ['fence', 4.5, 0, 1, 1], ['storage', 3, -5, 2, 2]];
+        ? [['nest', -5, -4, 3, 3], ['workshop', 4.5, -5, 5, 4], ['field', -7.5, 2, 3, 3], ['field', -4, 2, 3, 3], ['field', -7.5, 5.5, 3, 3], ['lamp', 0, -2, 1, 1], ['flowerbed', 2, 3, 1, 1]]
+        : [['nest', -4, -4.5, 3, 3], ['lamp', -1.5, 1.5, 1, 1], ['lamp', 3.5, 1.5, 1, 1], ['lamp', 1, -3, 1, 1], ['fence', 5.5, -2, 1, 1], ['fence', 5.5, -1, 1, 1], ['fence', 5.5, 0, 1, 1], ['storage', 4, -6, 4, 3]];
     for (const [type, x, z, w, d] of layout) {
       const v = makeBuildingView(type, w, d, hashId(`${keeperId}:${x}:${z}`));
       v.group.position.set(x, this.terrain.height(x, z), z);
       v.update({ built: true, progress: 1, crop: type === 'field' ? { id: 'sunWheat', growth: 0.6 + (Math.abs(x) % 1) * 0.4 } : null, working: true }, 0);
       for (const g of v.glows) this.env.glowMaterials.add(g);
       this.scene.add(v.group);
-      this.obstacles.push({ x, z, r: Math.max(0.4, Math.min(w, d) / 2) });
+      this.obstacles.push({ x, z, r: Math.max(0.4, Math.min(w, d) / 2 + 0.2) });
     }
   }
 
@@ -299,7 +335,7 @@ export class ExploreView {
   private syncBuildings(world: Readonly<WorldState>): void {
     const home = world.homes[PLAYER_ID]!;
     const seen = new Set<string>();
-    this.obstacles = [];
+    this.rects = [];
     for (const inst of Object.values(home.buildings)) {
       seen.add(inst.id);
       const def = this.content.buildings.get(inst.type)!;
@@ -311,10 +347,10 @@ export class ExploreView {
           this.scene.remove(entry.view.group);
           if (entry.foundation) this.scene.remove(entry.foundation);
         }
-        const view = makeBuildingView(inst.type, fp.w, fp.d, hashId(inst.id));
+        const view = makeBuildingView(inst.type, def.size.w, def.size.d, hashId(inst.id));
         const y = foundationHeight(this.content, home, inst);
         view.group.position.set(inst.x + fp.w / 2, y, inst.z + fp.d / 2);
-        view.group.rotation.y = 0;
+        view.group.rotation.y = -inst.rot * (Math.PI / 2);
         this.scene.add(view.group);
         for (const g of view.glows) this.env.glowMaterials.add(g);
         // 地基：建筑占地四角的最高点，石砌填到地形（DESIGN 7）
@@ -332,7 +368,9 @@ export class ExploreView {
       entry.inst = inst;
       const crop = inst.crop ? { id: inst.crop.cropId, growth: inst.crop.progress / this.content.crops.get(inst.crop.cropId)!.growTicks } : null;
       entry.view.update({ built: inst.built, progress: def.buildWork ? inst.buildProgress / def.buildWork : 1, crop, working: !!inst.job && inst.workers.length > 0 }, this.t);
-      if (def.kind !== 'decoration' || inst.type === 'lamp') this.obstacles.push({ x: inst.x + fp.w / 2, z: inst.z + fp.d / 2, r: Math.max(0.4, Math.min(fp.w, fp.d) / 2) });
+      if (def.kind === 'field' || inst.type === 'path' || inst.type === 'flowerbed') continue;
+      if (inst.type === 'lamp' || inst.type === 'fence') this.rects.push({ x: inst.x + fp.w / 2, z: inst.z + fp.d / 2, hw: 0.2, hd: 0.2 });
+      else if (def.kind !== 'decoration') this.rects.push({ x: inst.x + fp.w / 2, z: inst.z + fp.d / 2, hw: fp.w / 2 - 0.15, hd: fp.d / 2 - 0.15 });
     }
     for (const [id, e] of this.buildings) {
       if (seen.has(id)) continue;
@@ -378,7 +416,24 @@ export class ExploreView {
       }
     };
     for (const o of this.obstacles) push(P, o.x, o.z, o.r + 0.3);
+    // 建筑：矩形碰撞，沿穿透最浅的方向推出去
+    for (const r of this.rects) {
+      const dx = P.x - r.x;
+      const dz = P.z - r.z;
+      const px = r.hw + 0.3 - Math.abs(dx);
+      const pz = r.hd + 0.3 - Math.abs(dz);
+      if (px > 0 && pz > 0) {
+        if (px < pz) P.x += Math.sign(dx || 1) * px;
+        else P.z += Math.sign(dz || 1) * pz;
+      }
+    }
     for (const { node } of this.props.values()) push(P, node.x, node.z, node.kind === 'tree' ? 0.55 : 0.6);
+    // 水面挡路（池塘、溪流）
+    if (this.terrain.isWater(P.x, P.z)) {
+      P.x = this.lastDry.x;
+      P.z = this.lastDry.z;
+      P.speed *= 0.5;
+    } else this.lastDry = { x: P.x, z: P.z };
     const th = Math.atan2(P.z, P.x);
     const lim = this.terrain.rim(th) * 0.8;
     const rr = Math.hypot(P.x, P.z);
@@ -425,7 +480,7 @@ export class ExploreView {
           const a = Math.random() * Math.PI * 2;
           const tx = e.home.x + Math.cos(a) * Math.random() * r;
           const tz = e.home.z + Math.sin(a) * Math.random() * r;
-          if (this.terrain.inside(tx, tz, 0.5)) v.moveTo(tx, tz);
+          if (this.terrain.inside(tx, tz, 0.5) && !this.terrain.isWater(tx, tz)) v.moveTo(tx, tz);
           e.timer = 2 + Math.random() * 4;
         }
         v.lookAt = Math.hypot(P.x - v.x, P.z - v.z) < 4.5 ? { x: P.x, z: P.z } : null;

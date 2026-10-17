@@ -43,7 +43,7 @@ export function createHome(ownerId: string, seed: number): HomeIsland {
     coreLevel: 1,
     buildings: {
       [`core:${ownerId}`]: fixedBuilding(`core:${ownerId}`, 'islandCore', -1, -1),
-      [`dock:${ownerId}`]: fixedBuilding(`dock:${ownerId}`, 'dock', HOME_DOCK.x - 1, HOME_DOCK.z - 1),
+      [`dock:${ownerId}`]: fixedBuilding(`dock:${ownerId}`, 'dock', HOME_DOCK.x - 2, HOME_DOCK.z - 1),
     },
     storage: {},
   };

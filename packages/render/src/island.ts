@@ -1,4 +1,4 @@
-import { fbm, hash2, type Terrain } from '@cloudsea/sim';
+import { fbm, hash2, WATER_LEVEL, type Terrain } from '@cloudsea/sim';
 import * as THREE from 'three';
 import { mulberry } from './util';
 
@@ -52,6 +52,8 @@ export function buildIslandMesh(terrain: Terrain, o: IslandMeshOptions = {}): TH
     }
     rings.push(row);
   }
+  const ab = new THREE.Vector3();
+  const ad = new THREE.Vector3();
   const topColor = (a: number[], b: number[], d: number[]): THREE.Color => {
     const x = (a[0]! + b[0]! + d[0]!) / 3;
     const y = (a[1]! + b[1]! + d[1]!) / 3;
@@ -59,6 +61,14 @@ export function buildIslandMesh(terrain: Terrain, o: IslandMeshOptions = {}): TH
     const n = fbm(x * 0.35 + 9, z * 0.35 - 4, seed);
     const rr = Math.hypot(x, z) / terrain.rim(Math.atan2(z, x));
     if (rr > 0.86) return c.setHSL(0.09, 0.32, 0.5 + (n - 0.5) * 0.08); // 岛缘露出泥土
+    // 水底与岸边沙地
+    if (y < WATER_LEVEL + 0.05) return c.setHSL(0.1, 0.25, 0.42 + (n - 0.5) * 0.06);
+    if (terrain.waterDistance(x, z) < 1.1) return c.setHSL(0.11, 0.38, 0.72 + (n - 0.5) * 0.06);
+    // 陡坡露出岩石
+    ab.set(b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!);
+    ad.set(d[0]! - a[0]!, d[1]! - a[1]!, d[2]! - a[2]!);
+    const ny = Math.abs(ab.cross(ad).normalize().y);
+    if (ny < 0.58) return c.setHSL(0.07 + (n - 0.5) * 0.02, 0.14, 0.5 + (n - 0.5) * 0.1);
     return c.setHSL(hue + (n - 0.5) * 0.07, 0.34 + (n - 0.5) * 0.1, 0.45 + (n - 0.5) * 0.1 + y * 0.012);
   };
   for (let i = 1; i <= N; i++) {
@@ -125,7 +135,7 @@ export function buildIslandMesh(terrain: Terrain, o: IslandMeshOptions = {}): TH
       const rr = Math.sqrt(rnd()) * R;
       const x = Math.cos(th) * rr;
       const z = Math.sin(th) * rr;
-      if (rr > terrain.rim(th) * 0.84 || o.clear?.(x, z)) continue;
+      if (rr > terrain.rim(th) * 0.84 || o.clear?.(x, z) || terrain.waterDistance(x, z) < 0.8) continue;
       const y = terrain.height(x, z);
       if (gi < gc) {
         dm.position.set(x, y - 0.02, z);
@@ -151,5 +161,68 @@ export function buildIslandMesh(terrain: Terrain, o: IslandMeshOptions = {}): TH
     grass.receiveShadow = true;
     group.add(grass, flow);
   }
+  const water = buildWater(terrain);
+  if (water) group.add(water);
   return group;
+}
+
+/** 池塘与溪流的水面（半透明、微微发光）。 */
+export const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x8fc7e0, emissive: 0x3c7a96, emissiveIntensity: 0.12, roughness: 0.15, metalness: 0, transparent: true, opacity: 0.82, flatShading: true });
+
+function buildWater(terrain: Terrain): THREE.Object3D | null {
+  const { ponds = [], streams = [] } = terrain.params;
+  if (ponds.length === 0 && streams.length === 0) return null;
+  const g = new THREE.Group();
+  for (const p of ponds) {
+    const m = new THREE.Mesh(new THREE.CircleGeometry(p.radius * 1.12, 20).rotateX(-Math.PI / 2), waterMaterial);
+    m.position.set(p.x, WATER_LEVEL, p.z);
+    m.receiveShadow = true;
+    g.add(m);
+  }
+  for (const s of streams) {
+    for (let i = 0; i < s.points.length - 1; i++) {
+      const a = s.points[i]!;
+      const b = s.points[i + 1]!;
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(s.width * 1.15, len + s.width).rotateX(-Math.PI / 2), waterMaterial);
+      m.position.set((a.x + b.x) / 2, WATER_LEVEL, (a.z + b.z) / 2);
+      m.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
+      g.add(m);
+    }
+  }
+  return g;
+}
+
+/**
+ * 远景岛（LOD）：低精度地形 + 几棵树，用于远处的浮岛与航行途中。
+ * detail = 'far'（几百米外）或 'mid'（航行接近时）。
+ */
+export function buildIslandLod(terrain: Terrain, detail: 'far' | 'mid', seed: number): THREE.Group {
+  const R = terrain.params.radius;
+  const g = buildIslandMesh(terrain, {
+    rings: detail === 'far' ? 6 : 12,
+    segments: detail === 'far' ? 20 : 40,
+    depth: R * 0.8,
+    layers: detail === 'far' ? 4 : 6,
+    grass: 0,
+    flowers: 0,
+  });
+  const rnd = mulberry(seed);
+  const trees = detail === 'far' ? Math.round(R / 5) : Math.round(R / 2.5);
+  const trunk = new THREE.MeshStandardMaterial({ color: 0x8a5f40, flatShading: true });
+  const leaf = new THREE.MeshStandardMaterial({ color: 0x6fae55, flatShading: true });
+  for (let i = 0; i < trees; i++) {
+    const a = rnd() * Math.PI * 2;
+    const r = Math.sqrt(rnd()) * R * 0.7;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    if (terrain.isWater(x, z)) continue;
+    const s = 0.8 + rnd() * 0.6;
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * s, 0.25 * s, 1.6 * s, 4), trunk);
+    t.position.set(x, terrain.height(x, z) + 0.8 * s, z);
+    const f = new THREE.Mesh(new THREE.IcosahedronGeometry(1.1 * s, 0), leaf);
+    f.position.set(x, terrain.height(x, z) + 2.2 * s, z);
+    g.add(t, f);
+  }
+  return g;
 }

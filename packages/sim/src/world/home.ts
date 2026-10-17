@@ -122,6 +122,7 @@ export function placementBlocker(
   const terrain = homeTerrain(home.seed, home.coreLevel);
   const cells = cellsOf(def, { x, z, rot });
   for (const [cx, cz] of cells) if (!terrain.inside(cx + 0.5, cz + 0.5, 0.6)) return '超出岛的范围';
+  for (const [cx, cz] of cells) if (terrain.isWater(cx + 0.5, cz + 0.5) || terrain.waterDistance(cx + 0.5, cz + 0.5) < 0.3) return '这里是水边，不能建造';
   const occupied = new Set<string>();
   for (const b of Object.values(home.buildings)) for (const [cx, cz] of cellsOf(content.buildings.get(b.type)!, b)) occupied.add(`${cx},${cz}`);
   if (cells.some(([cx, cz]) => occupied.has(`${cx},${cz}`))) return '和其他建筑重叠了';

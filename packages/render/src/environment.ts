@@ -100,7 +100,7 @@ export class Environment {
       uFog: { value: C(DAY.fog) },
       uCam: { value: new THREE.Vector3() },
     };
-    const seaGeo = new THREE.PlaneGeometry(700, 700, 110, 110);
+    const seaGeo = new THREE.PlaneGeometry(1400, 1400, 140, 140);
     seaGeo.rotateX(-Math.PI / 2);
     this.sea = new THREE.Mesh(
       seaGeo,
@@ -112,7 +112,7 @@ export class Environment {
         fragmentShader: `uniform vec3 uCol,uShade,uFog,uCam;uniform float uTime;varying vec3 vW;varying float vH;${NOISE}
  void main(){vec2 p=vW.xz*.03;float n=fb(p+vec2(uTime*.012,uTime*.007));float m=fb(p*2.7-vec2(uTime*.02,-uTime*.01));
  float v=smoothstep(.32,.85,n*.75+m*.35+vH*.07);vec3 c=mix(uShade,uCol,v);float d=length(vW.xz-uCam.xz);
- c=mix(c,uFog,smoothstep(30.,230.,d));gl_FragColor=vec4(c,1.);
+ c=mix(c,uFog,smoothstep(60.,330.,d));gl_FragColor=vec4(c,1.);
  #include <colorspace_fragment>
  }`,
       }),
@@ -227,8 +227,9 @@ export class Environment {
     this.skyU.uTop.value.lerp(grey, overcast * (1 - n));
     mix(this.fog.color, DAY.fog, NIGHT.fog);
     this.fog.color.lerp(C(0xd8dbe3), this.fogDensity * (1 - n) * 0.8);
-    this.fog.near = lerp(38, 8, this.fogDensity);
-    this.fog.far = lerp(190, 55, this.fogDensity);
+    // 晴朗时雾推得很远，远处的浮岛（星图上的岛）看得见；雾天视野变近
+    this.fog.near = lerp(60, 8, this.fogDensity);
+    this.fog.far = lerp(650, 55, this.fogDensity);
     (this.scene.background as THREE.Color).copy(this.fog.color);
     mix(this.seaU.uFog.value, DAY.fog, NIGHT.fog);
     mix(this.seaU.uCol.value, DAY.cl, NIGHT.cl);
@@ -247,6 +248,8 @@ export class Environment {
     this.sky.position.copy(camera.position);
     this.seaU.uTime.value = t;
     this.seaU.uCam.value.copy(camera.position);
+    this.sea.position.x = focus.x;
+    this.sea.position.z = focus.z;
     this.sun.position.set(focus.x + this.sunDir.x * 40, this.sunDir.y * 40, focus.z + this.sunDir.z * 40);
     this.sun.target.position.set(focus.x, 0, focus.z);
 

@@ -16,6 +16,10 @@ export const islandSchema = z.strictObject({
   radius: z.number().min(10).max(80),
   /** 地形种子。 */
   seed: z.int().min(0),
+  /** 地形主题（v0.5）：草坡 / 溪石 / 雾谷 / 农田 / 台地。 */
+  theme: z.enum(['meadow', 'brook', 'valley', 'farm', 'terrace']),
+  /** 海拔（米）：远景里岛的高低错落。 */
+  altitude: z.number().min(-20).max(20),
   /** 星图上的位置（相对坐标）。 */
   chartPos: z.strictObject({ x: z.number(), y: z.number() }),
   /** 航行所需风帆等级。 */
