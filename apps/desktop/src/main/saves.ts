@@ -67,6 +67,26 @@ export function registerSaveIpc(): void {
     }
   });
 
+  // 客人自己的角色（DESIGN 9.3：角色存在玩家本机；加入别人的世界时带过去，M2）
+  const charRoot = () => join(app.getPath('userData'), 'characters');
+  ipcMain.handle('characters:list', async (): Promise<Array<{ id: string; data: string; modified: number }>> => {
+    await mkdir(charRoot(), { recursive: true });
+    const out: Array<{ id: string; data: string; modified: number }> = [];
+    for (const f of await readdir(charRoot())) {
+      if (!f.endsWith('.json')) continue;
+      const id = f.slice(0, -5);
+      if (!SLOT_RE.test(id)) continue;
+      const file = join(charRoot(), f);
+      out.push({ id, data: await readFile(file, 'utf8'), modified: (await stat(file)).mtimeMs });
+    }
+    return out.sort((a, b) => b.modified - a.modified);
+  });
+  ipcMain.handle('characters:write', async (_e, id: string, data: string): Promise<void> => {
+    if (!SLOT_RE.test(id)) throw new Error('invalid character id');
+    await mkdir(charRoot(), { recursive: true });
+    await writeWithBackups(join(charRoot(), `${id}.json`), data);
+  });
+
   ipcMain.handle('saves:delete', async (_e, slot: string): Promise<void> => {
     await rm(slotDir(slot), { recursive: true, force: true });
   });

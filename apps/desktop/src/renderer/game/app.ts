@@ -711,7 +711,7 @@ export class App {
   }
 
   private fastForward(ticks: number): void {
-    for (let i = 0; i < ticks; i += 50) this.session?.host.update(5000);
+    for (let i = 0; i < ticks; i += 50) this.session?.host?.update(5000);
   }
 
   /** 按固定步长推进（不渲染）：播片与动画定格用。 */
