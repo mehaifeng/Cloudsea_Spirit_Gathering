@@ -58,6 +58,8 @@ export interface Ctx {
   enterBuild(): void;
   saveNow(): Promise<void>;
   quitToTitle(): void;
+  /** 出航（v0.6：预检 → 上船表演 → 发意图）。 */
+  sail(islandId: string): Promise<boolean>;
 }
 
 const me = (ctx: Ctx) => ctx.world().characters[PLAYER_ID]!;
@@ -661,7 +663,7 @@ export function openStarChart(ctx: Ctx): void {
 }
 
 async function sail(ctx: Ctx, islandId: string): Promise<void> {
-  if (await ctx.act({ type: 'sail', islandId })) ctx.ui.closeAllModals();
+  await ctx.sail(islandId);
 }
 
 // =================================================================== 守岛人

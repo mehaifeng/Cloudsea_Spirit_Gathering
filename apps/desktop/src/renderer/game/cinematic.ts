@@ -60,6 +60,13 @@ export class Cutscene {
     window.addEventListener('keydown', this.onKey, true);
   }
 
+  /** 从播片开始到现在的总时长（秒）。 */
+  get elapsed(): number {
+    let t = 0;
+    for (let i = 0; i < this.index && i < this.shots.length; i++) t += this.shots[i]!.duration;
+    return t + (this.started ? this.time : 0);
+  }
+
   get done(): boolean {
     return this.finished;
   }

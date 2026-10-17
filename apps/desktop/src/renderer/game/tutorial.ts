@@ -1,6 +1,5 @@
 import { type WorldState } from '@cloudsea/sim';
 import { clear, h } from '@cloudsea/ui';
-import * as THREE from 'three';
 import type { ExploreView } from './explore';
 import { PLAYER_ID } from './session';
 import type { UiRoot } from './uiRoot';
@@ -10,7 +9,7 @@ import type { UiRoot } from './uiRoot';
  * 0 坠落荒岛（移动） → 1 第一只絮灵（互动） → 2 蚀化絮灵袭击（第一场战斗）
  * → 3 捕获第一只野生絮灵 → 4 建栖巢、安排打工 → 5 点亮第一盏灯（引出主线）→ 完成
  */
-export const STARTER_SPOT = { x: 2.5, z: 4.5 } as const;
+export const STARTER_SPOT = { x: 2.5, z: 4.5 } as const; // 与 ExploreView.ORB 一致
 
 const HINTS: Record<number, string> = {
   0: '你的云舟在云海中失事，坠落到这座荒岛上。<br>用 <b>WASD</b> 走一走，<b>拖动鼠标</b>转动视角。',
@@ -22,7 +21,6 @@ const HINTS: Record<number, string> = {
 };
 
 export class Tutorial {
-  private puff: THREE.Sprite | null = null;
   private moved = 0;
   private last: { x: number; z: number } | null = null;
   private shownStep = -1;
@@ -58,33 +56,8 @@ export class Tutorial {
       if (this.moved > 4) this.advance(1);
     }
 
-    // 第一只絮灵：发光的云气团
+    // 第一只絮灵：发光的云气团（模型在 ExploreView 里，开场播片时也在场景中）
     const wantPuff = step <= 1 && view.isHome && Object.keys(c.spirits).length === 0;
-    if (wantPuff && !this.puff) {
-      const tex = new THREE.CanvasTexture((() => {
-        const cv = document.createElement('canvas');
-        cv.width = cv.height = 64;
-        const g = cv.getContext('2d')!;
-        const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-        gr.addColorStop(0, 'rgba(255,240,200,1)');
-        gr.addColorStop(0.4, 'rgba(255,210,140,.6)');
-        gr.addColorStop(1, 'rgba(255,200,120,0)');
-        g.fillStyle = gr;
-        g.fillRect(0, 0, 64, 64);
-        return cv;
-      })());
-      tex.colorSpace = THREE.SRGBColorSpace;
-      this.puff = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-      this.puff.scale.setScalar(1.4);
-      this.puff.position.set(STARTER_SPOT.x, view.ground(STARTER_SPOT.x, STARTER_SPOT.z) + 0.8, STARTER_SPOT.z);
-      view.scene.add(this.puff);
-    }
-    if (this.puff) {
-      if (!wantPuff) {
-        view.scene.remove(this.puff);
-        this.puff = null;
-      } else this.puff.position.y = view.ground(STARTER_SPOT.x, STARTER_SPOT.z) + 0.8 + Math.sin(performance.now() / 400) * 0.12;
-    }
     view.extraInteractables = wantPuff ? [{ kind: 'starter', id: 'starter', x: STARTER_SPOT.x, z: STARTER_SPOT.z, label: '靠近发光的云气', radius: 2.4 }] : [];
 
     // 按捕获次数判断：第一只捕获的絮灵很可能和伙伴同物种，图鉴不会增加
@@ -97,8 +70,6 @@ export class Tutorial {
     }
   }
 
-  /** 场景切换时，旧场景里的云团跟着丢掉。 */
-  detach(): void {
-    this.puff = null;
-  }
+  /** 场景切换（保留接口）。 */
+  detach(): void {}
 }

@@ -13,7 +13,8 @@ const smooth = (a: number, b: number, x: number): number => {
 /**
  * 云舟航行（DESIGN 3.6，v0.5）：沿航线的实时过场。
  * 出发岛与目的岛的场景按真实世界坐标放进同一个场景；云舟沿三次贝塞尔航线飞行，
- * 镜头依次切换：起飞跟拍 → 尾随 → 侧拍 → 高空俯瞰 → 降落。目的岛由远景逐级换成完整场景。
+ * 镜头（v0.6）：从上船时的跟随机位过渡到云舟后上方，全程朝向目的地、画面里一直有云舟；
+ * 降落时过渡到玩家站在甲板上的跟随机位，接着下船。目的岛由远景逐级换成完整场景。
  * 时间轴按房主的 tick 推进（和房主的抵达结算一致）。
  */
 export class VoyageView {
@@ -32,6 +33,7 @@ export class VoyageView {
   private destShown = false;
   private readonly glow = glowTexture();
   private readonly prev = new THREE.Vector3();
+  private arriveYaw = 0;
 
   constructor(
     private readonly content: ContentDb,
@@ -55,8 +57,10 @@ export class VoyageView {
     this.destAt = posOf(dest.islandId);
 
     // 起点镜头：出发岛当前的镜头（换算到世界坐标）
-    const look = new THREE.Vector3(origin.player.x, origin.ground(origin.player.x, origin.player.z) + 1.15, origin.player.z).add(this.originAt);
+    const look = new THREE.Vector3(origin.player.x, origin.player.feetY + 1.15, origin.player.z).add(this.originAt);
     this.startPose = { pos: camera.position.clone().add(this.originAt), look };
+    // 目的岛：玩家先站在停泊云舟的甲板上（降落后从这里下船），镜头对准那里
+    dest.placeOnDeck();
 
     // 两座岛的场景挂进来；出发岛的玩家与队伍上了云舟，目的岛先藏着（远景代替）
     origin.root.position.copy(this.originAt);
@@ -73,10 +77,14 @@ export class VoyageView {
     const b1 = dest.berth();
     const p0 = new THREE.Vector3(b0.x, b0.y, b0.z).add(this.originAt);
     const p3 = new THREE.Vector3(b1.x, b1.y, b1.z).add(this.destAt);
-    const dir = p3.clone().sub(p0).setY(0).normalize();
+    // 起飞沿停泊时的船头方向、降落沿目的地停泊的船头方向：上下船时船身朝向和停着的一致
     const dist = p0.distanceTo(p3);
-    const p1 = p0.clone().addScaledVector(dir, Math.min(60, dist * 0.3)).add(new THREE.Vector3(0, 24, 0));
-    const p2 = p3.clone().addScaledVector(dir, -Math.min(70, dist * 0.3)).add(new THREE.Vector3(0, 20, 0));
+    const out = new THREE.Vector3(Math.sin(b0.yaw), 0, Math.cos(b0.yaw));
+    const inn = new THREE.Vector3(Math.sin(b1.yaw), 0, Math.cos(b1.yaw));
+    const p1 = p0.clone().addScaledVector(out, Math.min(60, dist * 0.3)).add(new THREE.Vector3(0, 24, 0));
+    // 降落：从海的那一侧（停泊船头朝外的方向）飞进来，最后一段原地掉头停好（船头朝外，方便下次起飞）
+    const p2 = p3.clone().addScaledVector(inn, Math.min(70, dist * 0.3)).add(new THREE.Vector3(0, 20, 0));
+    this.arriveYaw = b1.yaw;
     this.path = new THREE.CubicBezierCurve3(p0, p1, p2, p3);
 
     // 云舟、玩家、甲板上的絮灵（最多 3 只），其余化为光团
@@ -113,36 +121,24 @@ export class VoyageView {
     return this.k;
   }
 
-  /** 镜头：按航程分段，段与段之间平滑过渡。 */
+  /**
+   * 镜头（v0.6）：云舟后上方、朝向目的地（不切侧面），云舟在画面下三分之一处；
+   * 起飞段从上船时的机位过渡过来，降落段过渡到玩家在甲板上的跟随机位。
+   */
   private shot(k: number): { pos: THREE.Vector3; look: THREE.Vector3 } {
     const at = this.path.getPoint(k);
-    const tan = this.path.getTangent(Math.min(0.999, k)).setY(0).normalize();
-    const side = new THREE.Vector3(-tan.z, 0, tan.x);
-    const chase = { pos: at.clone().addScaledVector(tan, -9).add(new THREE.Vector3(0, 4, 0)), look: at.clone().addScaledVector(tan, 6) };
-    const profile = { pos: at.clone().addScaledVector(side, 10).addScaledVector(tan, 3).add(new THREE.Vector3(0, 1.5, 0)), look: at.clone().addScaledVector(tan, 2) };
-    const high = { pos: at.clone().addScaledVector(side, -14).addScaledVector(tan, -6).add(new THREE.Vector3(0, 16, 0)), look: this.destAt.clone().lerp(at, 0.5) };
+    const toDest = this.destAt.clone().sub(at).setY(0);
+    const dir = toDest.lengthSq() > 1 ? toDest.normalize() : this.path.getTangent(Math.min(0.999, k)).setY(0).normalize();
+    const chase = { pos: at.clone().addScaledVector(dir, -10).add(new THREE.Vector3(0, 4.5, 0)), look: at.clone().addScaledVector(dir, 14).add(new THREE.Vector3(0, -1, 0)) };
     const final = this.dest.followPose();
     const finalPose = { pos: final.pos.clone().add(this.destAt), look: final.look.clone().add(this.destAt) };
-    const keys: Array<[number, { pos: THREE.Vector3; look: THREE.Vector3 }]> = [
-      [0, this.startPose],
-      [0.12, chase],
-      [0.35, chase],
-      [0.45, profile],
-      [0.6, profile],
-      [0.7, high],
-      [0.82, chase],
-      [0.9, chase],
-      [1, finalPose],
-    ];
-    for (let i = 0; i < keys.length - 1; i++) {
-      const [ka, a] = keys[i]!;
-      const [kb, b] = keys[i + 1]!;
-      if (k <= kb) {
-        const e = smooth(ka, kb, k);
-        return { pos: a.pos.clone().lerp(b.pos, e), look: a.look.clone().lerp(b.look, e) };
-      }
-    }
-    return finalPose;
+    const mix = (a: { pos: THREE.Vector3; look: THREE.Vector3 }, b: { pos: THREE.Vector3; look: THREE.Vector3 }, x: number) => {
+      const e = smooth(0, 1, x);
+      return { pos: a.pos.clone().lerp(b.pos, e), look: a.look.clone().lerp(b.look, e) };
+    };
+    if (k < 0.14) return mix(this.startPose, chase, k / 0.14);
+    if (k > 0.9) return mix(chase, finalPose, (k - 0.9) / 0.1);
+    return chase;
   }
 
   /** tick：房主当前 tick（快照之间按真实时间外推）。返回航程进度 0..1。 */
@@ -156,10 +152,19 @@ export class VoyageView {
     const ahead = this.path.getPoint(Math.min(1, k + 0.01));
     this.skiff.group.position.copy(at);
     if (ahead.distanceToSquared(at) > 1e-6) {
-      const yaw = Math.atan2(ahead.x - at.x, ahead.z - at.z);
+      let yaw = Math.atan2(ahead.x - at.x, ahead.z - at.z);
       const turn = Math.atan2(at.x - this.prev.x, at.z - this.prev.z) - yaw;
-      this.skiff.group.rotation.set(0, yaw, THREE.MathUtils.clamp(turn * 2, -0.25, 0.25));
+      // 最后一段：悬停掉头，转到停泊朝向
+      if (k > 0.86) {
+        const e = smooth(0.86, 0.985, k);
+        let d = this.arriveYaw - yaw;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        yaw += d * e;
+      }
+      this.skiff.group.rotation.set(0, yaw, THREE.MathUtils.clamp(turn * 2, -0.25, 0.25) * (k > 0.86 ? 0.3 : 1));
     }
+    if (k >= 0.999) this.skiff.group.rotation.set(0, this.arriveYaw, 0);
     this.prev.copy(at);
     const speed = Math.min(1, Math.sin(Math.PI * raw) * 1.4);
     this.skiff.update(this.t, speed);

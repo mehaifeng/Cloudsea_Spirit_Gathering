@@ -5,6 +5,8 @@ import {
   createTerrain,
   generateWildGenes,
   homeIslandId,
+  sailBlocked,
+  type ActiveBattle,
   type BattleEvent,
   type Intent,
   type WorldEvent,
@@ -13,23 +15,25 @@ import {
 import { buildIslandMesh, CreatureView, Environment, lookFromSpirit } from '@cloudsea/render';
 import { button, focusFirst, h } from '@cloudsea/ui';
 import * as THREE from 'three';
-import { BattleView } from './battle';
+import { battleUnitSpirit, BattleView } from './battle';
 import { Cutscene, type Shot } from './cinematic';
-import { arrivalShots, firstWildShots, keeperIntroShots, openingShots } from './cutscenes';
+import { ambushShots, arrivalShots, keeperIntroShots, openingShots } from './cutscenes';
+import { SCENARIOS, type ScenarioHost } from './scenarios';
 import { VoyageView } from './voyageView';
 import { arrivalPoint, HOME_DOCK } from '@cloudsea/sim';
 import { BuildMode } from './build';
 import { ExploreView, type Interactable } from './explore';
 import { Hud } from './hud';
 import { Input } from './input';
-import { openBuilding, openCore, openDock, openKeeper, openMenu, openStarChart, type Ctx } from './panels';
+import { openBuilding, openCore, openDock, openKeeper, openMenu, openSpirit, openStarChart, type Ctx } from './panels';
 import { saveBackend } from './saves';
 import { GameSession, PLAYER_ID } from './session';
 import { itemName } from './text';
 import { Tutorial } from './tutorial';
 import { UiRoot } from './uiRoot';
 
-type Mode = 'title' | 'explore' | 'build' | 'battle' | 'sailing' | 'cutscene' | 'voyage';
+/** boarding / landing：上下船表演；transition：探索 → 战斗的转场（v0.6）。 */
+type Mode = 'title' | 'explore' | 'build' | 'battle' | 'sailing' | 'cutscene' | 'voyage' | 'boarding' | 'landing' | 'transition';
 
 /** 标题画面背景：一座小岛和几只随机絮灵，镜头慢慢绕。 */
 class TitleScene {
@@ -108,8 +112,13 @@ export class App {
   private snapTick = 0;
   private snapAt = performance.now();
   private readonly ctx: Ctx;
+  /** 探索 → 战斗的转场。 */
+  private transition: { t: number; id: string; from: THREE.Vector3; look: THREE.Vector3; focus: () => THREE.Vector3 | null; cleanup: (() => void) | null; wipe: HTMLElement } | null = null;
   /** 自动化测试模式：固定世界种子、打开测试钩子。 */
   private readonly testMode = new URLSearchParams(location.search).get('test') === '1';
+  private sceneStarted = false;
+  /** 测试：冻结真实时间（只渲染），用 advance() 按步推进，截图时刻精确。 */
+  private frozen = false;
 
   constructor(private readonly canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -128,6 +137,10 @@ export class App {
       enterBuild: () => this.enterBuild(),
       saveNow: () => this.session?.save() ?? Promise.resolve(),
       quitToTitle: () => this.quitToTitle(),
+      sail: (islandId) => this.beginSail(islandId),
+    };
+    this.hud.onPartyClick = (id) => {
+      if (this.mode === 'explore' && !this.ui.capturing) openSpirit(this.ctx, id);
     };
     const resize = () => {
       const w = innerWidth;
@@ -171,6 +184,12 @@ export class App {
     this.ui.layer.append(this.titleEl);
     focusFirst(panel);
     document.body.dataset['ready'] = 'true';
+    // 测试模式的场景直达：?test=1&scene=swim
+    const scene = this.testMode ? new URLSearchParams(location.search).get('scene') : null;
+    if (scene && !this.sceneStarted) {
+      this.sceneStarted = true;
+      void this.runScene(scene);
+    }
   }
 
   private startSession(session: GameSession): void {
@@ -283,7 +302,7 @@ export class App {
     this.snapAt = performance.now();
     const p = world.players[PLAYER_ID]!;
     // 云舟航行：出发、加速、抵达
-    if (this.pendingVoyage && this.explore && (this.mode === 'explore' || this.mode === 'build')) {
+    if (this.pendingVoyage && this.explore && (this.mode === 'explore' || this.mode === 'build' || this.mode === 'boarding')) {
       const v = this.pendingVoyage;
       this.pendingVoyage = null;
       this.startVoyage(world, v);
@@ -293,13 +312,12 @@ export class App {
       else if (p.islandId === this.voyage.dest.islandId) this.finishVoyage(world);
       return;
     }
-    if (this.pendingBattle && world.battles[this.pendingBattle] && !this.battle && !this.cutscene) {
+    if (this.pendingBattle && world.battles[this.pendingBattle] && !this.battle && !this.cutscene && !this.transition) {
       const id = this.pendingBattle;
       this.pendingBattle = null;
       const b = world.battles[id]!;
-      const wild = b.kind === 'wild' && b.wildId ? b.wildId : null;
-      const name = b.state.sides[1].units[0]?.name ?? '絮灵';
-      if (wild && this.explore) this.playCutscene('firstWild', firstWildShots(this.explore, wild, name), () => this.world && this.startBattleView(this.world, id));
+      if (b.kind === 'scripted' && this.explore) this.playAmbush(world, id, b);
+      else if (this.explore) this.transitionToBattle(id, this.battleFocus(b));
       else this.startBattleView(world, id);
     }
     if (this.battle && (this.pendingTurns.length || this.pendingEnd)) {
@@ -312,8 +330,8 @@ export class App {
         if (end) battle.showResult(end, world);
       })();
     }
-    if (this.mode === 'explore' || this.mode === 'build') {
-      if (this.explore && this.explore.islandId !== p.islandId) {
+    if (this.mode === 'explore' || this.mode === 'build' || this.mode === 'boarding' || this.mode === 'landing') {
+      if (this.explore && this.explore.islandId !== p.islandId && this.mode !== 'boarding') {
         this.sailTransition(p.islandId);
         return;
       }
@@ -350,11 +368,127 @@ export class App {
     this.voyage = null;
     this.voyageLabel?.remove();
     this.voyageLabel = null;
-    this.mode = 'explore';
-    this.ui.tutorial.classList.remove('hidden');
     this.explore.sync(world);
-    const island = this.content.islands.get(this.explore.islandId);
-    if (island) this.playCutscene(`arrive:${island.id}`, arrivalShots(this.explore, island), () => {});
+    // 下船（v0.6）：从甲板跳到栈桥 / 码头，再交还操作
+    this.mode = 'landing';
+    const ex = this.explore;
+    void ex.disembark().then(() => {
+      if (this.explore !== ex || this.mode !== 'landing') return;
+      this.mode = 'explore';
+      this.ui.tutorial.classList.remove('hidden');
+      const island = this.content.islands.get(ex.islandId);
+      if (island) this.playCutscene(`arrive:${island.id}`, arrivalShots(ex, island), () => {});
+    });
+  }
+
+  /** 出航（v0.6）：先预检，能走就播上船，再发意图；失败时下船。 */
+  private async beginSail(islandId: string): Promise<boolean> {
+    const w = this.world;
+    const ex = this.explore;
+    if (!w || !ex) return false;
+    const blocked = sailBlocked(this.content, w.players[PLAYER_ID]!, w.characters[PLAYER_ID]!, PLAYER_ID, islandId);
+    if (blocked) {
+      this.ui.toast(blocked, 'error');
+      return false;
+    }
+    this.ui.closeAllModals();
+    this.build?.dispose();
+    this.build = null;
+    this.mode = 'boarding';
+    this.hud.clear();
+    this.ui.tutorial.classList.add('hidden');
+    await ex.board();
+    if (this.explore !== ex) return false;
+    const ok = await this.act({ type: 'sail', islandId });
+    if (!ok) {
+      await ex.disembark();
+      this.mode = 'explore';
+      this.ui.tutorial.classList.remove('hidden');
+    }
+    return ok;
+  }
+
+  /** 战斗转场的焦点：野生絮灵 / 守岛人的头。 */
+  private battleFocus(b: ActiveBattle): () => THREE.Vector3 | null {
+    const ex = this.explore;
+    return () => {
+      if (!ex) return null;
+      if (b.wildId) return ex.creatureView(b.wildId)?.headPos() ?? null;
+      if (b.keeperId) {
+        const k = ex.keeperView(b.keeperId);
+        return k ? new THREE.Vector3(k.x, k.feetY + 1.4, k.z) : null;
+      }
+      return null;
+    };
+  }
+
+  /** 第一场战斗前：蚀化絮灵从远处冲过来 + 推镜（v0.6），再转场进战斗。 */
+  private playAmbush(world: Readonly<WorldState>, id: string, b: ActiveBattle): void {
+    const ex = this.explore!;
+    const u = b.state.sides[1].units[0]!;
+    const view = new CreatureView(lookFromSpirit(this.content, battleUnitSpirit(world, b, u)));
+    const P = ex.player;
+    let spot = { x: P.x + 4, z: P.z + 4, a: 0 };
+    const toCenter = Math.atan2(-P.x, -P.z);
+    for (let i = 0; i < 14; i++) {
+      const a = toCenter + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 0.45;
+      const x = P.x + Math.sin(a) * 10;
+      const z = P.z + Math.cos(a) * 10;
+      if (ex.terrain.inside(x, z, 1.5) && !ex.terrain.isWater(x, z)) {
+        spot = { x, z, a };
+        break;
+      }
+    }
+    ex.addActor('ambusher', view, spot.x, spot.z, spot.a + Math.PI);
+    view.maxSpeed *= 1.8;
+    view.moveTo(P.x + Math.sin(spot.a) * 2.6, P.z + Math.cos(spot.a) * 2.6);
+    P.yaw = spot.a;
+    P.lookAt = { x: spot.x, z: spot.z };
+    const focus = () => ex.actor('ambusher')?.headPos() ?? null;
+    this.playCutscene('ambush', ambushShots(ex, 'ambusher'), () => this.transitionToBattle(id, focus, () => ex.removeActor('ambusher')));
+  }
+
+  /** 探索 → 战斗：镜头向对手推近、纸色淡出，然后进战斗（战斗镜头从对手身边拉回）。 */
+  private transitionToBattle(id: string, focus: () => THREE.Vector3 | null, cleanup: (() => void) | null = null): void {
+    if (!this.explore) return;
+    this.ui.closeAllModals();
+    this.build?.dispose();
+    this.build = null;
+    this.hud.clear();
+    this.ui.tutorial.classList.add('hidden');
+    this.mode = 'transition';
+    this.explore.cameraLocked = true;
+    const wipe = h('div', { class: 'battle-wipe' });
+    this.ui.layer.append(wipe);
+    const look = this.explore.followPose().look;
+    this.transition = { t: 0, id, from: this.camera.position.clone(), look, focus, cleanup, wipe };
+  }
+
+  private static readonly TRANSITION_SECONDS = 0.55;
+
+  private stepTransition(dt: number): void {
+    const tr = this.transition!;
+    tr.t += dt;
+    const k = Math.min(1, tr.t / App.TRANSITION_SECONDS);
+    const e = k * k;
+    const f = tr.focus() ?? tr.look;
+    this.camera.position.lerpVectors(tr.from, f, e * 0.6);
+    this.camera.lookAt(new THREE.Vector3().lerpVectors(tr.look, f, Math.min(1, k * 1.6)));
+    if (k >= 1 && this.world?.battles[tr.id]) {
+      this.transition = null;
+      tr.cleanup?.();
+      if (this.explore) this.explore.cameraLocked = false;
+      this.startBattleView(this.world, tr.id);
+      tr.wipe.classList.add('out');
+      setTimeout(() => tr.wipe.remove(), 700);
+    } else if (k >= 1) {
+      // 战斗已经不在了（例如测试里直接结束）：撤掉转场
+      this.transition = null;
+      tr.cleanup?.();
+      tr.wipe.remove();
+      if (this.explore) this.explore.cameraLocked = false;
+      this.mode = 'explore';
+    }
   }
 
   private sailTransition(islandId: string): void {
@@ -509,12 +643,68 @@ export class App {
           await this.act({ type: 'tutorial', step: 2 });
           const id = `${PLAYER_ID}-s1`;
           setTimeout(() => this.explore?.celebrate(id), 300);
-          this.ui.say('……', ['云气慢慢凝成了一只小小的絮灵。', '它蹭了蹭你的手，好像认识你。', '这是旧大地的一段记忆——一片晒着太阳的麦田。'], '暖芽', () => {
-            this.ui.say('！', ['远处传来低吼。', '一只被蚀雾侵蚀的絮灵冲了过来！'], undefined, () => void this.act({ type: 'tutorialBattle' }));
-          });
+          // 对话结束后蚀化絮灵冲过来（袭击播片 + 战斗转场，v0.6）
+          this.ui.say('……', ['云气慢慢凝成了一只小小的絮灵。', '它蹭了蹭你的手，好像认识你。', '这是旧大地的一段记忆——一片晒着太阳的麦田。'], '暖芽', () => void this.act({ type: 'tutorialBattle' }));
         }
         break;
     }
+  }
+
+  /** 场景直达用的宿主（只发意图）。 */
+  private scenarioHost(): ScenarioHost {
+    return {
+      newGame: async () => {
+        this.titleEl?.remove();
+        this.titleEl = null;
+        this.startSession(GameSession.create('小禾', 20261017));
+      },
+      act: async (intent) => (await this.session?.client.request(intent)) ?? { ok: false, error: '没有会话' },
+      world: () => this.world!,
+      mode: () => this.mode,
+      teleport: (x, z, yaw) => this.testTeleport(x, z, yaw),
+      fastForward: (ticks) => this.fastForward(ticks),
+      skipCutscene: () => this.cutscene?.skip(),
+      closeDialogues: () => this.ui.skipDialogues(),
+      setCamera: (yaw, pitch, dist) => {
+        if (!this.explore) return;
+        this.explore.camYaw = yaw;
+        this.explore.camPitch = pitch;
+        this.explore.camDist = dist;
+      },
+      advance: (seconds) => this.advance(seconds),
+      interactNearest: async () => {
+        if (this.explore?.nearest) await this.interact(this.explore.nearest);
+      },
+      sail: async (islandId) => {
+        await this.beginSail(islandId);
+      },
+    };
+  }
+
+  private async runScene(name: string): Promise<void> {
+    const sc = SCENARIOS[name];
+    if (!sc) {
+      this.ui.toast(`没有这个测试场景：${name}（可用：${Object.keys(SCENARIOS).join('、')}）`, 'error');
+      return;
+    }
+    await sc.run(this.scenarioHost());
+    document.body.dataset['scene'] = name;
+  }
+
+  private testTeleport(x: number, z: number, yaw?: number): void {
+    if (!this.explore) return;
+    this.explore.player.setPosition(x, z, yaw ?? this.explore.player.yaw);
+    this.session?.client.fire({ type: 'move', x, z, yaw: yaw ?? this.explore.player.yaw });
+  }
+
+  private fastForward(ticks: number): void {
+    for (let i = 0; i < ticks; i += 50) this.session?.host.update(5000);
+  }
+
+  /** 按固定步长推进（不渲染）：播片与动画定格用。 */
+  private advance(seconds: number): void {
+    const dt = 1 / 30;
+    for (let t = 0; t < seconds; t += dt) this.step(dt);
   }
 
   /**
@@ -526,38 +716,55 @@ export class App {
       world: () => this.world,
       mode: () => this.mode,
       act: (intent: Intent) => this.session?.client.request(intent),
-      teleport: (x: number, z: number) => {
-        this.explore?.player.setPosition(x, z, this.explore.player.yaw);
-        this.session?.client.fire({ type: 'move', x, z, yaw: this.explore?.player.yaw ?? 0 });
-      },
+      teleport: (x: number, z: number, yaw?: number) => this.testTeleport(x, z, yaw),
       nearest: () => this.explore?.nearest ?? null,
       interactables: () => this.explore?.allInteractables() ?? [],
       interact: () => (this.explore?.nearest ? this.interact(this.explore.nearest) : null),
-      fastForward: (ticks: number) => {
-        for (let i = 0; i < ticks; i += 50) this.session?.host.update(5000);
-      },
-      setCamera: (yaw: number, pitch: number, dist: number) => {
-        if (!this.explore) return;
-        this.explore.camYaw = yaw;
-        this.explore.camPitch = pitch;
-        this.explore.camDist = dist;
-      },
+      fastForward: (ticks: number) => this.fastForward(ticks),
+      setCamera: (yaw: number, pitch: number, dist: number) => this.scenarioHost().setCamera(yaw, pitch, dist),
       dialogueOpen: () => this.ui.dialogueOpen,
       voyageProgress: () => this.voyage?.progress ?? null,
       modalOpen: () => this.ui.modalOpen,
+      /** v0.6：场景直达、按步推进、出航（含上船）、玩家状态。 */
+      scene: (name: string) => this.runScene(name),
+      scenes: () => Object.fromEntries(Object.entries(SCENARIOS).map(([k, v]) => [k, v.desc])),
+      advance: (seconds: number) => this.advance(seconds),
+      sail: (islandId: string) => this.beginSail(islandId),
+      skipCutscene: () => this.cutscene?.skip(),
+      player: () => {
+        const P = this.explore?.player;
+        return P ? { x: P.x, z: P.z, y: P.feetY, yaw: P.yaw, swim: P.swim, swimming: P.swimming, airborne: P.airborne, scripted: this.explore!.scripted } : null;
+      },
+      battlePositions: () => this.battle?.positions() ?? null,
+      creature: (id: string) => {
+        const v = this.explore?.creatureView(id);
+        return v ? { x: v.x, z: v.z } : null;
+      },
+      freeze: (on: boolean) => {
+        this.frozen = on;
+      },
+      cutsceneTime: () => this.cutscene?.elapsed ?? null,
     };
   }
 
   // ---------------------------------------------------------------- 主循环
 
+
   private frame(now: number): void {
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
+    if (!this.frozen) this.step(dt);
+    this.render();
+    this.input.endFrame();
+    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  /** 推进一帧逻辑（不渲染）。 */
+  private step(dt: number): void {
     this.session?.update(dt * 1000);
     const input = this.input;
     if (this.mode === 'title' && this.title) {
       this.title.update(dt, this.camera);
-      this.renderer.render(this.title.scene, this.camera);
     } else if ((this.mode === 'explore' || this.mode === 'sailing') && this.explore && this.world) {
       const controls = this.mode === 'explore' && !this.ui.capturing;
       this.explore.update(dt, input, (x, z, yaw) => this.session?.client.fire({ type: 'move', x, z, yaw }), controls);
@@ -568,31 +775,34 @@ export class App {
         if (input.hit('KeyM')) openStarChart(this.ctx);
         if (input.hit('Escape')) openMenu(this.ctx, 'settings');
       }
-      if (this.mode === 'explore') this.hud.update(this.world, this.explore.nearest, 'explore');
+      if (this.mode === 'explore') this.hud.update(this.world, this.explore.nearest, 'explore', this.ui.capturing);
       this.tutorial?.update(this.world, this.explore);
-      this.renderer.render(this.explore.scene, this.camera);
+    } else if ((this.mode === 'boarding' || this.mode === 'landing') && this.explore) {
+      this.explore.update(dt, null, (x, z, yaw) => this.session?.client.fire({ type: 'move', x, z, yaw }), false);
+    } else if (this.mode === 'transition' && this.explore) {
+      this.explore.update(dt, null, () => {}, false);
+      this.stepTransition(dt);
     } else if (this.mode === 'build' && this.explore && this.build && this.world) {
       this.explore.update(dt, null, () => {}, false);
       if (!this.ui.capturing) this.build.update(input);
-      this.hud.update(this.world, null, 'build');
-      this.renderer.render(this.explore.scene, this.camera);
+      this.hud.update(this.world, null, 'build', this.ui.capturing);
     } else if (this.mode === 'voyage' && this.voyage) {
       if (input.hit('Space') || input.hit('Enter')) void this.act({ type: 'hurryVoyage' });
       const tick = this.snapTick + ((performance.now() - this.snapAt) / 1000) * 10;
       this.voyage.update(dt, tick);
-      this.renderer.render(this.voyage.scene, this.camera);
     } else if (this.mode === 'cutscene' && this.explore && this.cutscene) {
       this.explore.update(dt, null, () => {}, false);
       this.cutscene.update(dt, this.camera);
-      this.renderer.render(this.explore.scene, this.camera);
     } else if (this.mode === 'battle' && this.battle) {
       this.battle.update(dt);
-      this.renderer.render(this.battle.scene, this.camera);
-    } else if (this.explore) {
-      this.renderer.render(this.explore.scene, this.camera);
     }
-    input.endFrame();
-    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  private render(): void {
+    if (this.mode === 'title' && this.title) this.renderer.render(this.title.scene, this.camera);
+    else if (this.mode === 'voyage' && this.voyage) this.renderer.render(this.voyage.scene, this.camera);
+    else if (this.mode === 'battle' && this.battle) this.renderer.render(this.battle.scene, this.camera);
+    else if (this.explore) this.renderer.render(this.explore.scene, this.camera);
   }
 }
 

@@ -6,6 +6,8 @@ import { registerSaveIpc } from './saves';
 const devServerUrl = process.env['CLOUDSEA_DEV_SERVER_URL'];
 /** 自动化测试：存档写到临时目录，并让页面打开测试钩子。 */
 const testMode = process.env['CLOUDSEA_TEST'] === '1';
+/** 场景直达（测试模式下）：CLOUDSEA_SCENE=swim 等，见 renderer/game/scenarios.ts。 */
+const scene = process.env['CLOUDSEA_SCENE'];
 if (testMode) app.setPath('userData', join(app.getPath('temp'), `cloudsea-test-${process.pid}`));
 
 function createWindow(): void {
@@ -36,10 +38,14 @@ function createWindow(): void {
     if (!devServerUrl || !url.startsWith(devServerUrl)) event.preventDefault();
   });
 
+  const query = new URLSearchParams();
+  if (testMode) query.set('test', '1');
+  if (testMode && scene) query.set('scene', scene);
+  const search = query.toString();
   if (devServerUrl) {
-    void win.loadURL(devServerUrl);
+    void win.loadURL(search ? `${devServerUrl}?${search}` : devServerUrl);
   } else {
-    void win.loadFile(join(__dirname, '..', 'dist', 'renderer', 'index.html'), testMode ? { search: 'test=1' } : {});
+    void win.loadFile(join(__dirname, '..', 'dist', 'renderer', 'index.html'), search ? { search } : {});
   }
 }
 

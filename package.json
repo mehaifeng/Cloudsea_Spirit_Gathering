@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "dev": "pnpm --filter @cloudsea/desktop dev",
     "build": "pnpm --filter @cloudsea/desktop build",
-    "smoke": "pnpm --filter @cloudsea/desktop smoke"
+    "smoke": "pnpm --filter @cloudsea/desktop smoke",
+    "scenes": "pnpm --filter @cloudsea/desktop scenes"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

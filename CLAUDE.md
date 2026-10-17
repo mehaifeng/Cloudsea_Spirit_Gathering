@@ -78,6 +78,7 @@ prototype/      M0 单文件原型，只作参考，不再修改
   - 状态异常 = `ailment`（目眩 `dazzled` / 湿透 `soaked` / 失衡 `unbalanced` / 麻痹 `paralyzed` / 迷蒙 `hazed`），增减益层数 = `stage`，暴击 = `crit`，倒下 = `downed`，疲惫 = `weary`
   - 提灯 = `lantern`（≠ 灯塔 `lighthouse`），云舟 = `skiff`（v0.5 起取代风帆 `sail`），航行 = `voyage`，采集工具 = `gatherTool`，燃料 = `fuel`，雾浓度 = `fogLevel`
   - 播片 / 过场 = `cutscene`，镜头时间轴 = `cameraTrack`，细节层级 = `lod`，世界布局 = `worldLayout`
+  - 上船 / 下船 = `board` / `disembark`，平台（码头、栈桥、甲板）= `platform`，游泳 = `swim`，涉水 = `wade`，迫降 = `crashLanding`，战斗转场 = `battleTransition`，测试场景 = `scenario`
   - 岛核 = `islandCore`，家园岛 = `homeIsland`，漂流岛 = `driftIsle`，守岛人岛 = `keeperIsland`，集市岛 = `marketIsle`，星图 = `starChart`
   - 栖巢 = `nest`，繁殖屋 = `hatchery`，工位 = `workSlot`，蓝图 = `blueprint`，订单 = `order`，商队 = `caravan`
   - 灯露 = `lanternDew`，记忆碎片 = `memoryShard`，图鉴 = `codex`，好感度 = `affinity`，外来（导入）标记 = `foreign`
@@ -97,6 +98,7 @@ prototype/      M0 单文件原型，只作参考，不再修改
 - 运行打包版：`pnpm build && pnpm --filter @cloudsea/desktop start`
 - 类型检查：`pnpm typecheck`
 - 单元测试：`pnpm test`（含 sim 纯度检查：禁止非相对导入、Math.random、Date 等）
+- 场景截图自查（v0.6 测试模式）：`pnpm scenes`（每个场景直接启动到某个画面并截图、做断言，几秒一个；`SCENES=swim,dock pnpm scenes` 只跑部分）。场景定义在 `apps/desktop/src/renderer/game/scenarios.ts`；手动看某个场景：`CLOUDSEA_TEST=1 CLOUDSEA_SCENE=swim pnpm dev`
 - 截图冒烟 + 全流程回归：`pnpm smoke`（打包后用 Playwright 启动 Electron，按新手引导走一遍核心循环；截图存到 `apps/desktop/screenshots/`，不入库）
 - 平衡模拟：`pnpm --filter @cloudsea/battle-sim start [--matches 200] [--levels 1,10,30,60] [--json]`
 - 测试模式：环境变量 `CLOUDSEA_TEST=1` 时存档写临时目录、世界种子固定、页面暴露 `window.__game`（只发意图）

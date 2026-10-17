@@ -87,7 +87,17 @@ input[type='text']:focus { border-color: var(--stamp); outline: none; box-shadow
 #hud-tl { left: 16px; }
 #hud-tr { right: 16px; }
 .hud-chip { background: var(--paper); border: 1.5px solid var(--ink); border-radius: 999px / 60% 40% 60% 40%; padding: 3px 13px; display: inline-flex; gap: 6px; align-items: center; font-size: 15px; box-shadow: 2px 2px 0 rgba(59, 49, 73, 0.25); }
-#party-bar { position: fixed; left: 16px; bottom: 16px; display: flex; gap: 10px; pointer-events: none; }
+#party-bar { position: fixed; left: 16px; bottom: 16px; display: flex; gap: 6px; }
+/* 队伍徽章（v0.6）：紧凑、可点击；菜单 / 对话打开时整排隐藏 */
+.party-badge { display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 14px; color: var(--ink); background: var(--paper); border: 1.5px solid var(--ink); border-radius: var(--wobble-sm); padding: 2px 8px 2px 6px; min-height: 30px; box-shadow: 2px 2px 0 var(--ink); cursor: pointer; transition: transform 0.08s, box-shadow 0.08s; }
+.party-badge .nm { font-family: var(--f-title); font-size: 17px; line-height: 1; }
+.party-badge .lv { font-variant-numeric: tabular-nums; color: var(--ink-soft); font-size: 13px; }
+.party-badge .lv::before { content: 'Lv'; font-size: 11px; margin-right: 1px; }
+.party-badge:hover, .party-badge:focus-visible { outline: none; transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--stamp); border-color: var(--stamp); }
+.party-badge.weary { border-style: dashed; color: var(--ink-soft); }
+.party-badge.weary::after { content: '疲'; font-size: 12px; font-weight: 700; color: var(--bad); border: 1px solid var(--bad); border-radius: 3px; padding: 0 2px; transform: rotate(-4deg); }
+#party-bar.hidden { display: none; }
+body:has(#modal:not(.hidden)) #party-bar, body:has(#modal:not(.hidden)) #hints, body:has(#modal:not(.hidden)) #prompt, body:has(#dialogue:not(.hidden)) #party-bar, body:has(#dialogue:not(.hidden)) #prompt { display: none; }
 .party-card { position: relative; background: var(--paper); background-image: var(--ruled); border: 1.5px solid var(--ink); border-radius: var(--wobble-sm); padding: 6px 12px; min-width: 100px; font-size: 14px; box-shadow: var(--shadow); }
 .party-card b { display: block; font-family: var(--f-title); font-weight: 400; font-size: 19px; }
 #prompt { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); pointer-events: none; }
@@ -192,3 +202,23 @@ body:has(#dialogue:not(.hidden)) #hints { display: none; }
   .btn, .spirit-card { transition: none; }
   .cine .letterbox, .cine-title { transition: none; }
 }
+
+/* 探索 → 战斗的转场（v0.6）：纸色从四周合拢，再散开 */
+.battle-wipe { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(circle at 50% 45%, rgba(251, 246, 234, 0) 0%, rgba(251, 246, 234, 0.6) 35%, var(--paper) 70%); background-size: 300% 300%; background-position: center; animation: wipe-in 0.55s ease-in forwards; z-index: 5; }
+.battle-wipe.out { animation: wipe-out 0.6s ease-out forwards; }
+@keyframes wipe-in { from { opacity: 0; background-size: 300% 300%; } to { opacity: 1; background-size: 100% 100%; } }
+@keyframes wipe-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* 战斗行动栏（v0.6）：紧凑按钮、按类别分组、说明卡 */
+.battle-actions { width: min(940px, 96vw); padding: 8px 14px 10px; }
+.action-row { margin-top: 6px; gap: 5px; flex-wrap: wrap; align-items: center; }
+.btn.sk { padding: 3px 9px; min-height: 32px; font-size: 14px; gap: 5px; }
+#battle-ui .btn.sk b { font-size: 14px; }
+.sk-cost { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 50%; font-size: 12px; font-weight: 700; border: 1.2px solid currentColor; font-variant-numeric: tabular-nums; }
+.sk-group { font-family: var(--f-title); font-size: 15px; color: var(--ink-soft); margin: 0 1px 0 6px; }
+.sk-group:first-child { margin-left: 0; }
+.skill-tip { position: fixed; z-index: 30; width: max-content; max-width: 320px; background: var(--paper); background-image: var(--ruled); border: 1.5px solid var(--ink); border-radius: var(--wobble-sm); padding: 8px 12px; font-size: 14px; line-height: 1.6; box-shadow: var(--shadow); pointer-events: none; }
+.skill-tip.hidden { display: none; }
+.skill-tip b { font-family: var(--f-title); font-weight: 400; font-size: 18px; }
+.warn-text { color: var(--bad); font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .battle-wipe, .battle-wipe.out { animation-duration: 0.01s; } }

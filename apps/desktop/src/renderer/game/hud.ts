@@ -9,10 +9,14 @@ import type { UiRoot } from './uiRoot';
 export class Hud {
   private lastKey = '';
   private lastPrompt = '';
+  /** 点队伍徽章（打开该絮灵的详情）。 */
+  onPartyClick: ((spiritId: string) => void) | null = null;
 
   constructor(private readonly content: ContentDb, private readonly ui: UiRoot) {}
 
-  update(world: Readonly<WorldState>, nearest: Interactable | null, mode: 'explore' | 'build' | 'battle'): void {
+  update(world: Readonly<WorldState>, nearest: Interactable | null, mode: 'explore' | 'build' | 'battle', covered = false): void {
+    // 菜单、对话打开时收起队伍徽章与操作提示（v0.6）
+    this.ui.partyBar.classList.toggle('hidden', covered || mode !== 'explore');
     const c = world.characters[PLAYER_ID]!;
     const p = world.players[PLAYER_ID]!;
     const island = this.content.islands.get(p.islandId);
@@ -37,18 +41,21 @@ export class Hud {
         h('span', { class: 'hud-chip', title: '灯露' }, icon('star'), String((c.backpack['lanternDew'] ?? 0) + (c.backpack['refinedDew'] ?? 0) + (c.backpack['superiorDew'] ?? 0))),
       );
       if (mode !== 'battle') {
+        // 队伍徽章（v0.6）：属性图标 + 名字首字 + 等级 + 疲惫标记，点击打开详情
         for (const id of c.party) {
           const s = c.spirits[id];
           if (!s) continue;
           const form = this.content.forms.get(s.formId)!;
-          this.ui.partyBar.append(
-            h(
-              'div',
-              { class: 'party-card' },
-              h('b', {}, s.nickname ?? form.form.name),
-              h('span', { class: 'row', style: 'gap:4px' }, elementIcon(form.line.element, 14), `Lv.${s.level}`, s.weary ? h('span', { class: 'tag warn' }, '疲惫') : null),
-            ),
+          const name = s.nickname ?? form.form.name;
+          const badge = h(
+            'button',
+            { class: `party-badge ${s.weary ? 'weary' : ''}`, title: `${name} Lv.${s.level}${s.weary ? '（疲惫）' : ''} · 点击查看`, 'data-spirit': id },
+            elementIcon(form.line.element, 14),
+            h('span', { class: 'nm' }, name.slice(0, 2)),
+            h('span', { class: 'lv' }, String(s.level)),
           );
+          badge.addEventListener('click', () => this.onPartyClick?.(id));
+          this.ui.partyBar.append(badge);
         }
       }
       this.ui.hints.textContent =

@@ -24,6 +24,14 @@ import type { UiRoot } from './uiRoot';
 import { PLAYER_ID } from './session';
 import { clockAt } from '@cloudsea/sim';
 
+const TARGET_LABEL: Record<string, string> = { singleEnemy: '单个对手', twoEnemies: '两个对手', allEnemies: '全部对手', self: '自己', singleAlly: '一名队友', allAllies: '我方全体', nextAlly: '下一位上场的队友', targets: '指定目标' };
+const CATEGORY: Record<string, { label: string; order: number }> = {
+  attack: { label: '攻击', order: 0 },
+  protect: { label: '防御', order: 1 },
+  buff: { label: '增益', order: 2 },
+  heal: { label: '治疗', order: 3 },
+  debuff: { label: '削弱', order: 4 },
+};
 const STAT_LABEL: Record<string, string> = { power: '力量', guard: '守护', agility: '灵巧', resonance: '共鸣', accuracy: '命中', evasion: '闪避' };
 const DEW_ITEM: Record<DewQuality, string> = { normal: 'lanternDew', refined: 'refinedDew', superior: 'superiorDew' };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -49,6 +57,10 @@ export class BattleView {
   private busy = false;
   private t = 0;
   private ended = false;
+  /** 开场运镜（v0.6）：从对手身边拉回舞台机位。 */
+  private intro = 0;
+  private static readonly INTRO_SECONDS = 1.1;
+  private readonly tip = h('div', { class: 'skill-tip hidden' });
   private readonly ground = (_x: number, _z: number) => 0;
 
   constructor(
@@ -70,12 +82,40 @@ export class BattleView {
     this.fx = new Fx(this.scene);
     const stage = buildIslandMesh(createTerrain({ seed: 77, radius: 10, amplitude: 0.15, flats: [{ x: 0, z: 0, radius: 9, height: 0 }] }), { grass: 120, flowers: 40, depth: 7 });
     this.scene.add(stage);
-    this.ui.layer.append(this.tagLayer, this.log, this.panel);
+    this.ui.layer.append(this.tagLayer, this.log, this.panel, this.tip);
     this.placeAll();
-    this.camera.position.set(0, 6.2, 10.5);
-    this.camera.lookAt(0, 0.8, 0.4);
+    this.placeCamera(0);
     this.say(this.battle.kind === 'keeper' ? '守岛人对战开始！' : this.battle.kind === 'scripted' ? '被蚀化的絮灵扑了过来！' : `${this.enemyNames()} 出现了！`);
-    this.startChoosing();
+    // 运镜结束前不出行动栏
+    setTimeout(() => !this.ended && this.startChoosing(), BattleView.INTRO_SECONDS * 1000 - 200);
+  }
+
+  /** 舞台机位；k < 1 时在“对手身边”与舞台之间（开场拉回）。 */
+  private placeCamera(k: number): void {
+    const e = 1 - Math.pow(1 - Math.min(1, k), 3);
+    const enemy = this.slotPos(1, 0);
+    const near = new THREE.Vector3(enemy.x + 1.8, 1.3, enemy.z + 2.6);
+    const nearLook = new THREE.Vector3(enemy.x, 0.7, enemy.z);
+    const stage = new THREE.Vector3(0, 6.2, 10.5);
+    const stageLook = new THREE.Vector3(0, 0.8, 0.4);
+    this.camera.position.lerpVectors(near, stage, e);
+    this.camera.lookAt(new THREE.Vector3().lerpVectors(nearLook, stageLook, e));
+  }
+
+  /** 各单位的位置与朝向（测试用：检查出招后是否回到原位）。 */
+  positions(): Record<string, { x: number; z: number; yaw: number; home: { x: number; z: number } }> {
+    const out: Record<string, { x: number; z: number; yaw: number; home: { x: number; z: number } }> = {};
+    for (const side of [0, 1] as const) {
+      this.state.sides[side].active.forEach((idx, slot) => {
+        if (idx === null) return;
+        const u = this.state.sides[side].units[idx]!;
+        const v = this.views.get(u.uid);
+        if (!v) return;
+        const home = this.slotPos(side, slot);
+        out[u.uid] = { x: v.group.position.x, z: v.group.position.z, yaw: v.yaw, home: { x: home.x, z: home.z } };
+      });
+    }
+    return out;
   }
 
   private enemyNames(): string {
@@ -89,15 +129,7 @@ export class BattleView {
   }
 
   private spiritFor(u: BattleUnit) {
-    const c = this.world.characters[PLAYER_ID]!;
-    const own = c.spirits[u.spiritId];
-    if (own) return own;
-    const wild = this.battle.wildId ? Object.values(this.world.islands).flatMap((i) => Object.values(i.wild)).find((w) => w.id === this.battle.wildId)?.group.find((s) => s.id === u.spiritId) : undefined;
-    if (wild) return wild;
-    const keeperSpirit = this.battle.keeperId ? this.world.keepers[this.battle.keeperId]?.spirits.find((s) => s.id === u.spiritId) : undefined;
-    if (keeperSpirit) return keeperSpirit;
-    // 新手引导的对手不在世界里：按单位信息拼一个外观
-    return { id: u.spiritId, formId: u.formId, blighted: u.blighted, genes: { lineId: u.lineId, sex: 'female', secondaryElement: null, parts: { ears: { partId: 'pointedEars', mutated: false }, horns: { partId: null, mutated: false }, wings: { partId: null, mutated: false }, tail: { partId: 'fluffTail', mutated: false }, feet: { partId: 'twoFeet', mutated: false } }, hueShift: 0, pattern: 'plain', sizePercent: 100, talents: { hp: 0, power: 0, guard: 0, agility: 0, resonance: 0 }, natureId: 'calm', shiny: false } } as const;
+    return battleUnitSpirit(this.world, this.battle, u);
   }
 
   private placeAll(): void {
@@ -111,7 +143,7 @@ export class BattleView {
   }
 
   private addView(u: BattleUnit, side: 0 | 1, slot: number): CreatureView {
-    const v = new CreatureView(lookFromSpirit(this.content, this.spiritFor(u) as Parameters<typeof lookFromSpirit>[1]));
+    const v = new CreatureView(lookFromSpirit(this.content, this.spiritFor(u)));
     const p = this.slotPos(side, slot);
     v.setPosition(p.x, p.z, side === 0 ? Math.PI : 0);
     v.setFainted(u.downed);
@@ -200,6 +232,7 @@ export class BattleView {
 
   private renderPanel(): void {
     clear(this.panel);
+    this.tip.classList.add('hidden');
     if (this.busy || this.ended) return;
     const slot = this.choosingSlot;
     const u = unitAt(this.state, { side: 0, slot });
@@ -212,31 +245,44 @@ export class BattleView {
       h('span', {}, h('b', {}, u.name), `  的行动`, h('span', { class: 'muted' }, `  （${slot + 1} 号位）`)),
       h('span', { class: 'row' }, '云气 ', qiPips, `${qi}/10`),
     );
-    const box = h('div', { class: 'panel', style: 'width:min(980px,96vw)' }, head);
-    const row = h('div', { class: 'row', style: 'margin-top:8px' });
+    const box = h('div', { class: 'panel battle-actions' }, head);
+    const row = h('div', { class: 'row action-row' });
     box.append(row);
     const c = this.world.characters[PLAYER_ID]!;
 
     if (this.sub === 'main') {
-      for (const id of availableSkills(u)) {
-        const sk = this.content.skills.get(id)!;
+      // 出招按类别排序：攻击 → 防御 → 增益 → 治疗 → 削弱；同类里轻击 / 防御这类基础招式放最后（v0.6）
+      const skills = availableSkills(u)
+        .map((id) => this.content.skills.get(id)!)
+        .sort((a, b) => (CATEGORY[a.category]?.order ?? 9) - (CATEGORY[b.category]?.order ?? 9) || Number(a.source === 'basic') - Number(b.source === 'basic'));
+      let lastCat = '';
+      for (const sk of skills) {
         const el: Element = sk.element === 'user' ? u.elements[0]! : sk.element;
         const can = sk.qiCost <= qi;
-        row.append(
-          button(
-            [elementIcon(el, 16), h('b', {}, sk.name), h('span', { class: 'muted' }, sk.qiCost ? `云气 ${sk.qiCost}` : '0 费'), sk.power ? h('span', { class: 'muted' }, `威力 ${sk.power}`) : null],
-            () => this.pickSkill(id),
-            { disabled: !can, title: sk.description, class: id === 'jab' || id === 'guard' ? '' : 'primary' },
-          ),
-        );
+        if (sk.category !== lastCat) {
+          lastCat = sk.category;
+          row.append(h('span', { class: 'sk-group' }, CATEGORY[sk.category]?.label ?? ''));
+        }
+        const btn = button([elementIcon(el, 14), h('b', {}, sk.name), h('span', { class: 'sk-cost' }, String(sk.qiCost))], () => this.pickSkill(sk.id), {
+          disabled: !can,
+          class: `sk ${sk.category === 'attack' && sk.source !== 'basic' ? 'primary' : ''}`,
+        });
+        this.attachTip(btn, () => this.skillTip(sk.id, el, can));
+        row.append(btn);
       }
+      row.append(h('span', { class: 'sk-group' }, '其他'));
       const bench = benchUnits(this.state, 0).filter((i) => !Object.values(this.choices).some((a) => a.type === 'switch' && a.unitIndex === i));
-      if (bench.length > 0) row.append(button('换人', () => ((this.sub = 'switch'), this.renderPanel())));
+      const tipped = (label: string, onClick: () => void, title: string, text: string) => {
+        const b = button(label, onClick, { class: 'sk' });
+        this.attachTip(b, () => h('div', {}, h('b', {}, title), h('div', {}, text)));
+        row.append(b);
+      };
+      if (bench.length > 0) tipped('换人', () => ((this.sub = 'switch'), this.renderPanel()), '换人', '换下这只絮灵，换上后备的伙伴。换人在本回合最先执行，换上来的伙伴这回合不行动。');
       if (this.state.kind === 'wild') {
-        row.append(button('灯露', () => ((this.sub = 'dew'), this.renderPanel())));
-        row.append(button('逃跑', () => this.choose({ type: 'flee' }), { title: '按双方灵巧判定能否逃掉' }));
+        tipped('灯露', () => ((this.sub = 'dew'), this.renderPanel()), '灯露', '用灯露邀请野生絮灵加入。对方体力越低、灯露品质越好，成功率越高。');
+        tipped('逃跑', () => this.choose({ type: 'flee' }), '逃跑', '离开这场战斗。按双方的灵巧判定能否逃掉，失败会白白浪费这一回合。');
       } else if (this.state.kind !== 'scripted') {
-        row.append(button('认输', () => ((this.sub = 'forfeit'), this.renderPanel()), { title: '结束这场对战，按战败处理' }));
+        tipped('认输', () => ((this.sub = 'forfeit'), this.renderPanel()), '认输', '结束这场对战，按战败处理：上过场的絮灵会疲惫。');
       }
       // 被看破的对手：显示它下回合要做什么
       const prepared = this.battle.preparedAi;
@@ -295,6 +341,37 @@ export class BattleView {
     if (this.sub === 'main' && Object.keys(this.choices).length > 0) row.append(button('上一只', () => this.back()));
     this.panel.append(box);
     (box.querySelector('[data-focus]') as HTMLElement | null)?.focus();
+  }
+
+  /** 技能说明卡（悬停 / 获得焦点时显示在按钮上方）。 */
+  private skillTip(id: string, el: Element, can: boolean): HTMLElement {
+    const sk = this.content.skills.get(id)!;
+    const facts = [`云气 ${sk.qiCost}`, sk.power ? `威力 ${sk.power}` : null, sk.accuracy ? `命中 ${sk.accuracy}%` : '必中', `目标：${TARGET_LABEL[sk.target] ?? sk.target}`, sk.priority > 0 ? '先手' : sk.priority < 0 ? '后手' : null].filter(Boolean);
+    return h(
+      'div',
+      {},
+      h('div', { class: 'row', style: 'gap:6px' }, elementIcon(el, 16), h('b', {}, sk.name), h('span', { class: 'badge' }, CATEGORY[sk.category]?.label ?? ''), h('span', { class: 'muted' }, ELEMENT_INFO[el].name)),
+      h('div', { class: 'muted', style: 'font-size:14px' }, facts.join(' · ')),
+      h('div', {}, sk.description),
+      can ? null : h('div', { class: 'warn-text' }, '云气不够'),
+    );
+  }
+
+  private attachTip(btn: HTMLElement, render: () => HTMLElement): void {
+    const show = () => {
+      clear(this.tip);
+      this.tip.append(render());
+      this.tip.classList.remove('hidden');
+      const r = btn.getBoundingClientRect();
+      const w = this.tip.offsetWidth;
+      this.tip.style.left = `${Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`;
+      this.tip.style.top = `${r.top - this.tip.offsetHeight - 10}px`;
+    };
+    const hide = () => this.tip.classList.add('hidden');
+    btn.addEventListener('mouseenter', show);
+    btn.addEventListener('focus', show);
+    btn.addEventListener('mouseleave', hide);
+    btn.addEventListener('blur', hide);
   }
 
   private pickSkill(id: string): void {
@@ -363,14 +440,12 @@ export class BattleView {
         const sk = this.content.skills.get(e.skillId)!;
         this.say(`${this.name(e.uid)} 使用了「${sk.name}」`);
         const v = this.views.get(e.uid);
+        // 出招：原地向前扑一下再弹回（不走路、不转身，位置不会累积漂移，v0.6）
         if (v && sk.power > 0) {
-          const side = Number(e.uid[0]);
-          const home = { x: v.x, z: v.z };
-          v.moveTo(v.x, v.z + (side === 0 ? -1.2 : 1.2));
-          await sleep(260);
-          v.moveTo(home.x, home.z);
+          v.lunge(1.1);
+          await sleep(320);
         } else v?.hop(2.2);
-        await sleep(280);
+        await sleep(240);
         return;
       }
       case 'charge':
@@ -529,6 +604,10 @@ export class BattleView {
 
   update(dt: number): void {
     this.t += dt;
+    if (this.intro < BattleView.INTRO_SECONDS) {
+      this.intro += dt;
+      this.placeCamera(this.intro / BattleView.INTRO_SECONDS);
+    }
     for (const v of this.views.values()) v.update(dt, this.t, this.ground);
     this.env.update(dt, this.t, this.camera, new THREE.Vector3(0, 0, 0));
     this.fx.update(dt);
@@ -559,10 +638,23 @@ export class BattleView {
   }
 
   dispose(): void {
+    this.tip.remove();
     this.tagLayer.remove();
     this.log.remove();
     this.panel.remove();
     for (const v of this.views.values()) v.dispose();
     this.fx.clear();
   }
+}
+
+/** 战斗单位对应的絮灵外观来源（自家 / 野生 / 守岛人；新手引导的对手不在世界里，按单位信息拼一个）。 */
+export function battleUnitSpirit(world: Readonly<WorldState>, battle: ActiveBattle, u: BattleUnit): Parameters<typeof lookFromSpirit>[1] {
+  const c = world.characters[PLAYER_ID]!;
+  const own = c.spirits[u.spiritId];
+  if (own) return own;
+  const wild = battle.wildId ? Object.values(world.islands).flatMap((i) => Object.values(i.wild)).find((w) => w.id === battle.wildId)?.group.find((s) => s.id === u.spiritId) : undefined;
+  if (wild) return wild;
+  const keeperSpirit = battle.keeperId ? world.keepers[battle.keeperId]?.spirits.find((s) => s.id === u.spiritId) : undefined;
+  if (keeperSpirit) return keeperSpirit;
+  return { id: u.spiritId, formId: u.formId, blighted: u.blighted, genes: { lineId: u.lineId, sex: 'female', secondaryElement: null, parts: { ears: { partId: 'pointedEars', mutated: false }, horns: { partId: null, mutated: false }, wings: { partId: null, mutated: false }, tail: { partId: 'fluffTail', mutated: false }, feet: { partId: 'twoFeet', mutated: false } }, hueShift: 0, pattern: 'plain', sizePercent: 100, talents: { hp: 0, power: 0, guard: 0, agility: 0, resonance: 0 }, natureId: 'calm', shiny: false } } as Parameters<typeof lookFromSpirit>[1];
 }

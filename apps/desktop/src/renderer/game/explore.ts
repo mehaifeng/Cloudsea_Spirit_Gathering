@@ -10,6 +10,7 @@ import {
   homeIslandId,
   homeTerrain,
   islandTerrain,
+  WATER_LEVEL,
   weatherAt,
   type BuildingInstance,
   type GatherNode,
@@ -32,6 +33,10 @@ import {
   makeBuildingView,
   makeGatherProp,
   makeSkiff,
+  SKIFF_DECK_Y,
+  SKIFF_GATE,
+  skiffCollisionHalfWidth,
+  skiffHalfWidth,
   type SkiffView,
   mat,
   nightFactor,
@@ -69,7 +74,42 @@ interface RectObstacle {
   low?: boolean;
 }
 
+/**
+ * 可以站上去的平台（v0.6）：码头栈台、登岛栈桥、云舟甲板。
+ * 矩形（中心、朝向、半宽、半长）+ 顶面高度。站在顶面附近或从上方落下时算“在平台上”；
+ * wall = true 的平台从下面过来是墙（云舟船身），否则是一级台阶（码头）。
+ */
+interface Platform {
+  readonly x: number;
+  readonly z: number;
+  readonly yaw: number;
+  readonly hw: number;
+  readonly hd: number;
+  readonly top: number;
+  readonly wall: boolean;
+  /** 云舟甲板：只能从登船口上下，其余地方被栏杆挡住。 */
+  readonly deck?: boolean;
+}
+
+/** 脚下离平台顶面多近算“在上面”（台阶高度上限）。 */
+const STEP = 0.55;
+
 const HOME_REGION = 'sunPlains' as const;
+
+/** 自动驾驶（上下船、开场跳下云舟）：走到目标点；可在途中起跳。 */
+interface Autopilot {
+  x: number;
+  z: number;
+  run: boolean;
+  /** 剩余距离小于它时起跳（一次）。 */
+  jumpAt?: number | undefined;
+  jumpStrength?: number | undefined;
+  jumped?: boolean;
+  /** 到达后的朝向。 */
+  faceYaw?: number | undefined;
+  resolve: () => void;
+  timeout: number;
+}
 
 /** 一座岛的场景：地形、采集点、建筑、野生絮灵、自家絮灵、守岛人、玩家。 */
 export class ExploreView {
@@ -86,10 +126,13 @@ export class ExploreView {
   private coreLevel = 0;
   private readonly props = new Map<string, { node: GatherNode; view: PropView }>();
   private readonly buildings = new Map<string, { view: BuildingView; key: string; inst: BuildingInstance; foundation: THREE.Mesh | null }>();
-  private readonly creatures = new Map<string, { view: CreatureView; home: { x: number; z: number }; kind: 'wild' | 'own' | 'keeper'; timer: number; state: Spirit['state'] }>();
+  private readonly creatures = new Map<string, { view: CreatureView; home: { x: number; z: number }; kind: 'wild' | 'own' | 'keeper'; timer: number; state: Spirit['state']; aboard: boolean }>();
   private readonly keepers = new Map<string, HumanoidView>();
   private obstacles: Obstacle[] = [];
   private rects: RectObstacle[] = [];
+  /** 码头 / 栈桥（静态）与云舟甲板（随云舟摆放）。 */
+  private staticPlatforms: Platform[] = [];
+  private skiffPlatform: Platform | null = null;
   private readonly glowTex = glowTexture();
   camYaw = 0.45;
   camPitch = 0.42;
@@ -98,17 +141,28 @@ export class ExploreView {
   private moveSentAt = 0;
   private lastSent = { x: 0, z: 0, yaw: 0 };
   nearest: Interactable | null = null;
-  private lastDry = { x: 0, z: 0 };
   /** 播片期间由播片控制镜头。 */
   cameraLocked = false;
   /** 停在码头 / 栈桥边的云舟；家园岛在引导前三步是失事的残骸。 */
   private skiff: { view: SkiffView; wrecked: boolean } | null = null;
-  /** 失事残骸的位置（开场播片的落点）。 */
-  static readonly WRECK = { x: 5.5, z: 12.5 } as const;
+  /** 失事残骸停下的位置与朝向（开场迫降的终点）。 */
+  static readonly WRECK = { x: 3.5, z: 11, yaw: 0.9 + Math.PI } as const;
+  /** 停泊位置（相对码头 / 登岛点）：船身连推进舱都不压到码头 / 栈桥上。 */
+  static readonly BERTH_HOME = { dx: 3.65, dz: 1.6 } as const;
+  static readonly BERTH_PIER = { dx: 2.5, dz: 2.6 } as const;
+  /** 迫降在地上划出的土痕。 */
+  private trench: THREE.Mesh | null = null;
   private interactables: Interactable[] = [];
   /** 额外的交互点（新手引导用）。 */
   extraInteractables: Interactable[] = [];
   private t = 0;
+  private autopilot: Autopilot | null = null;
+  /** 乘着一个移动的物体（开场迫降时站在云舟甲板上）：每帧把玩家放到它的座位上。 */
+  private riding: { group: THREE.Object3D; seat: THREE.Vector3; yaw: number } | null = null;
+  /** 发光的云气团（引导第 1 步，第一只絮灵）。 */
+  private orb: THREE.Group | null = null;
+  /** 只做表现的临时絮灵（例如首战前冲过来的蚀化絮灵）。 */
+  private readonly actors = new Map<string, CreatureView>();
 
   /** 远景岛：岛 id（家园岛用 'home'）→ 模型。航行时目的地的远景会被完整场景替换。 */
   readonly distant = new Map<string, THREE.Object3D>();
@@ -132,7 +186,6 @@ export class ExploreView {
     this.player = new HumanoidView({ ...c.appearance, lantern: true }, this.glowTex);
     const at = spawn ?? { x: p.x, z: p.z, yaw: p.yaw };
     this.player.setPosition(at.x, at.z, at.yaw);
-    this.lastDry = { x: at.x, z: at.z };
     this.root.add(this.player.group);
     this.lastSent = { x: p.x, z: p.z, yaw: p.yaw };
     this.rebuildTerrain(world);
@@ -146,7 +199,64 @@ export class ExploreView {
     return this.islandId === homeIslandId(PLAYER_ID);
   }
 
+  /** 地形高度（不含平台）。 */
   ground = (x: number, z: number): number => this.terrain.height(x, z);
+
+  private get platforms(): Platform[] {
+    return this.skiffPlatform ? [...this.staticPlatforms, this.skiffPlatform] : this.staticPlatforms;
+  }
+
+  /** 点在平台矩形里时返回局部坐标。 */
+  private platformLocal(pl: Platform, x: number, z: number, margin = 0): { lx: number; lz: number } | null {
+    const dx = x - pl.x;
+    const dz = z - pl.z;
+    const c = Math.cos(pl.yaw);
+    const s = Math.sin(pl.yaw);
+    const lx = dx * c - dz * s;
+    const lz = dx * s + dz * c;
+    if (Math.abs(lx) > pl.hw + margin || Math.abs(lz) > pl.hd + margin) return null;
+    return { lx, lz };
+  }
+
+  /** 云舟甲板上某点是否在船舷之内（船头船尾收窄）。 */
+  private onDeck(pl: Platform, lx: number, lz: number): boolean {
+    return Math.abs(lx) < skiffHalfWidth(lz) - 0.05;
+  }
+
+  /** 给定脚底高度时的“地面”：地形与脚下附近的平台顶面取高者。 */
+  groundAt(x: number, z: number, feet: number): number {
+    let h = this.terrain.height(x, z);
+    for (const pl of this.platforms) {
+      if (pl.top <= h || pl.top - feet > STEP) continue;
+      // 甲板只能从上面落下来或本来就站在上面（不能从船舷外直接走上去）
+      if (pl.deck && feet < pl.top - 0.05) continue;
+      const l = this.platformLocal(pl, x, z);
+      if (!l) continue;
+      if (pl.deck && !this.onDeck(pl, l.lx, l.lz)) continue;
+      h = pl.top;
+    }
+    return h;
+  }
+
+  /** 玩家用的地面（考虑平台、乘坐）。 */
+  private readonly playerGround = (x: number, z: number): number => {
+    if (this.riding) return this.ridingY();
+    return this.groundAt(x, z, this.player.feetY);
+  };
+
+  /** 絮灵用的地面：矮平台（码头、栈桥）、上了船的站在甲板上，深水里浮在水面。 */
+  private creatureGround(aboard: boolean): (x: number, z: number) => number {
+    return (x, z) => {
+      let h = this.terrain.height(x, z);
+      if (this.terrain.isWater(x, z) && WATER_LEVEL - h > 0.35) h = WATER_LEVEL - 0.3;
+      for (const pl of this.platforms) {
+        if (pl.wall && !aboard) continue;
+        const l = this.platformLocal(pl, x, z);
+        if (l && (!pl.deck || this.onDeck(pl, l.lx, l.lz))) h = Math.max(h, pl.top);
+      }
+      return h;
+    };
+  }
 
   private rebuildTerrain(world: Readonly<WorldState>): void {
     if (this.islandMesh) {
@@ -156,16 +266,17 @@ export class ExploreView {
       const home = world.homes[PLAYER_ID]!;
       this.coreLevel = home.coreLevel;
       this.terrain = homeTerrain(home.seed, home.coreLevel);
+      const W = ExploreView.WRECK;
       this.islandMesh = buildIslandMesh(this.terrain, {
         grassHue: 0.25,
-        clear: (x, z) => Math.hypot(x, z) < 2.5 || Math.hypot(x - HOME_DOCK.x, z - HOME_DOCK.z) < 2.5,
+        clear: (x, z) => Math.hypot(x, z) < 2.5 || Math.hypot(x - HOME_DOCK.x, z - HOME_DOCK.z) < 2.5 || Math.hypot(x - W.x, z - W.z) < 3 || Math.hypot(x - HOME_DOCK.x - ExploreView.BERTH_HOME.dx, z - HOME_DOCK.z - ExploreView.BERTH_HOME.dz) < 3,
       });
     } else {
       this.terrain = islandTerrain(this.island!);
       const a = arrivalPoint(this.island!);
       this.islandMesh = buildIslandMesh(this.terrain, {
         grassHue: this.island!.fogLevel >= 2 ? 0.3 : this.island!.kind === 'keeper' ? 0.2 : 0.24,
-        clear: (x, z) => Math.hypot(x - a.x, z - a.z) < 3,
+        clear: (x, z) => Math.hypot(x - a.x, z - a.z) < 3 || Math.hypot(x - a.x - ExploreView.BERTH_PIER.dx, z - a.z - ExploreView.BERTH_PIER.dz) < 3,
       });
       if (this.props.size === 0) {
         for (const node of gatherNodes(this.island!)) {
@@ -175,51 +286,126 @@ export class ExploreView {
           this.root.add(view.group);
           this.props.set(node.id, { node, view });
         }
-        // 栈桥：在登岛点
-        const pier = new THREE.Group();
-        for (let i = 0; i < 4; i++) {
-          const plank = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.1, 0.4), mat(i % 2 ? 0x9a6a43 : 0x8a5f40));
-          plank.position.set(0, 0.12, i * 0.45);
-          plank.receiveShadow = true;
-          pier.add(plank);
-        }
-        pier.position.set(a.x, this.terrain.height(a.x, a.z), a.z + 1.2);
-        this.root.add(pier);
+        this.buildPier(a);
         if (this.island!.keeper) this.buildKeeperHome(this.island!.keeper);
       }
     }
     this.root.add(this.islandMesh);
   }
 
+  /** 登岛栈桥：木板 + 两侧桩子，可以走上去；云舟停在它右边（v0.6）。 */
+  private buildPier(a: { x: number; z: number }): void {
+    const pier = new THREE.Group();
+    const base = this.terrain.height(a.x, a.z + 2);
+    const n = 7;
+    for (let i = 0; i < n; i++) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.1, 0.4), mat(i % 2 ? 0x9a6a43 : 0x8a5f40));
+      plank.position.set(0, 0.12, 0.6 + i * 0.45);
+      plank.receiveShadow = true;
+      plank.castShadow = true;
+      pier.add(plank);
+    }
+    for (const sx of [-1, 1]) {
+      for (const z of [0.5, 3.4]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.9, 0.14), mat(0x6b4a35));
+        post.position.set(sx * 0.85, 0.3, z);
+        post.castShadow = true;
+        pier.add(post);
+        this.obstacles.push({ x: a.x + sx * 0.85, z: a.z + z, r: 0.12 });
+      }
+      // 桥面下的横梁，接到地面
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.3, 3.1), mat(0x6b4a35));
+      beam.position.set(sx * 0.7, -0.05, 1.95);
+      pier.add(beam);
+    }
+    pier.position.set(a.x, base, a.z);
+    this.root.add(pier);
+    this.staticPlatforms.push({ x: a.x, z: a.z + 1.95, yaw: 0, hw: 0.8, hd: 1.6, top: base + 0.17, wall: false });
+  }
+
   private placeSkiff(wrecked: boolean): void {
     if (this.skiff) this.root.remove(this.skiff.view.group);
-    const view = makeSkiff({ wrecked });
+    if (this.trench) {
+      this.root.remove(this.trench);
+      this.trench = null;
+    }
+    const view = makeSkiff({ wrecked, seed: 11 });
     for (const g of view.glows) this.env.glowMaterials.add(g);
     let x: number;
     let z: number;
     let yaw: number;
     let lift: number;
     if (wrecked) {
-      ({ x, z } = ExploreView.WRECK);
-      yaw = 0.9;
-      lift = -0.25;
+      ({ x, z, yaw } = ExploreView.WRECK);
+      lift = -0.18;
     } else if (this.isHome) {
-      x = HOME_DOCK.x + 3.3;
-      z = HOME_DOCK.z + 1.6;
+      x = HOME_DOCK.x + ExploreView.BERTH_HOME.dx;
+      z = HOME_DOCK.z + ExploreView.BERTH_HOME.dz;
       yaw = 0;
       lift = 0.4;
     } else {
       const a = arrivalPoint(this.island!);
-      x = a.x + 2.1;
-      z = a.z + 2.6;
+      x = a.x + ExploreView.BERTH_PIER.dx;
+      z = a.z + ExploreView.BERTH_PIER.dz;
       yaw = 0;
       lift = 0.4;
     }
-    view.group.position.set(x, Math.max(this.terrain.height(x, z), 0) + lift, z);
-    view.group.rotation.y = yaw;
+    const y = Math.max(this.terrain.height(x, z), wrecked ? -10 : 0) + lift;
+    view.group.position.set(x, y, z);
+    view.group.rotation.set(wrecked ? -0.05 : 0, yaw, wrecked ? 0.1 : 0, 'YXZ');
     this.root.add(view.group);
     this.skiff = { view, wrecked };
-    if (wrecked) this.obstacles.push({ x, z, r: 1.6 });
+    this.skiffPlatform = { x, z, yaw, hw: 1.7, hd: 2.6, top: y + SKIFF_DECK_Y, wall: true, deck: true };
+    if (wrecked) this.buildTrench();
+  }
+
+  /** 迫降的土痕：从触地点到残骸，一条压进草地的深色沟（v0.6）。progress 控制长出来多少。 */
+  private buildTrench(): void {
+    const W = ExploreView.WRECK;
+    const len = ExploreView.SLIDE;
+    const fx = Math.sin(W.yaw);
+    const fz = Math.cos(W.yaw);
+    const segs = 24;
+    const pos: number[] = [];
+    const idx: number[] = [];
+    for (let i = 0; i <= segs; i++) {
+      const d = -len + (len * i) / segs - 1.2;
+      const cx = W.x + fx * d;
+      const cz = W.z + fz * d;
+      const w = 0.55 + 0.25 * Math.sin((i / segs) * Math.PI);
+      for (const s of [-1, 0, 1]) {
+        const x = cx + fz * w * s;
+        const z = cz - fx * w * s;
+        pos.push(x, this.terrain.height(x, z) + (s === 0 ? -0.02 : 0.03), z);
+      }
+      if (i < segs) {
+        const b = i * 3;
+        idx.push(b, b + 3, b + 1, b + 1, b + 3, b + 4, b + 1, b + 4, b + 2, b + 2, b + 4, b + 5);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    this.trench = new THREE.Mesh(geo, mat(0x7a5236, { polygonOffset: true, polygonOffsetFactor: -2 }));
+    this.trench.receiveShadow = true;
+    this.root.add(this.trench);
+    this.setTrenchProgress(1);
+  }
+
+  /** 迫降滑行的距离（米）。 */
+  static readonly SLIDE = 9;
+
+  setTrenchProgress(k: number): void {
+    if (!this.trench) return;
+    const segs = 24;
+    this.trench.geometry.setDrawRange(0, Math.round(clamp(k, 0, 1) * segs) * 12);
+    this.trench.visible = k > 0.01;
+  }
+
+  /** 失事云舟（开场播片用）。 */
+  get skiffView(): SkiffView | null {
+    return this.skiff?.view ?? null;
   }
 
   /** 航行时：藏起岛上的玩家与跟随的队伍絮灵、停着的云舟（它们在飞行的云舟上）。 */
@@ -229,10 +415,10 @@ export class ExploreView {
     if (this.skiff && !this.skiff.wrecked) this.skiff.view.group.visible = !travelling;
   }
 
-  /** 云舟停泊处（本岛局部坐标），航行的起点 / 终点。 */
-  berth(): { x: number; y: number; z: number } {
-    const g = this.skiff?.view.group.position;
-    return g ? { x: g.x, y: g.y, z: g.z } : { x: 0, y: 0, z: 0 };
+  /** 云舟停泊处（本岛局部坐标）与船头朝向，航行的起点 / 终点。 */
+  berth(): { x: number; y: number; z: number; yaw: number } {
+    const g = this.skiff?.view.group;
+    return g ? { x: g.position.x, y: g.position.y, z: g.position.z, yaw: g.rotation.y } : { x: 0, y: 0, z: 0, yaw: 0 };
   }
 
   setSkiffVisible(visible: boolean): void {
@@ -278,8 +464,44 @@ export class ExploreView {
       v.update({ built: true, progress: 1, crop: type === 'field' ? { id: 'sunWheat', growth: 0.6 + (Math.abs(x) % 1) * 0.4 } : null, working: true }, 0);
       for (const g of v.glows) this.env.glowMaterials.add(g);
       this.root.add(v.group);
-      this.obstacles.push({ x, z, r: Math.max(0.4, Math.min(w, d) / 2 + 0.2) });
+      if (type === 'field' || type === 'flowerbed') continue;
+      this.rects.push({ x, z, hw: w / 2 - 0.15, hd: d / 2 - 0.15, low: type === 'fence' });
     }
+  }
+
+  /** 发光的云气团：光晕 + 小小的晶核 + 绕着转的光点 + 点光源（v0.6：场景里真实存在，开场镜头指向它）。 */
+  private ensureOrb(want: boolean): void {
+    if (want && !this.orb) {
+      const g = new THREE.Group();
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffe2a8, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      halo.scale.setScalar(2.2);
+      g.add(halo);
+      const coreMat = new THREE.MeshStandardMaterial({ color: 0xfff4d8, emissive: 0xffc46a, emissiveIntensity: 1.2, flatShading: true });
+      const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 0), coreMat);
+      g.add(core);
+      for (let i = 0; i < 6; i++) {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffd59a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+        sp.scale.setScalar(0.28);
+        sp.userData['i'] = i;
+        g.add(sp);
+      }
+      const light = new THREE.PointLight(0xffc46a, 2.2, 6, 1.6);
+      g.add(light);
+      g.userData['core'] = core;
+      this.root.add(g);
+      this.orb = g;
+    } else if (!want && this.orb) {
+      this.root.remove(this.orb);
+      this.orb = null;
+    }
+  }
+
+  /** 云气团的位置（引导第 1 步）。 */
+  static readonly ORB = { x: 2.5, z: 4.5 } as const;
+
+  orbPos(): THREE.Vector3 {
+    const O = ExploreView.ORB;
+    return new THREE.Vector3(O.x, this.terrain.height(O.x, O.z) + 0.9, O.z);
   }
 
   /** 用房主快照刷新场景里的东西（增删改）。 */
@@ -297,6 +519,7 @@ export class ExploreView {
     // 云舟：家园岛在引导前三步是残骸（被商队修好之前），之后停在码头边
     const wantWreck = this.isHome && !c.tutorial.done && c.tutorial.step < 3;
     if (!this.skiff || this.skiff.wrecked !== wantWreck) this.placeSkiff(wantWreck);
+    this.ensureOrb(this.isHome && !c.tutorial.done && c.tutorial.step <= 1 && Object.keys(c.spirits).length === 0);
 
     if (this.isHome) {
       const home = world.homes[PLAYER_ID]!;
@@ -373,7 +596,7 @@ export class ExploreView {
       const spawnZ = w.kind === 'own' && c.party.includes(w.spirit.id) ? this.player.z - 1 : w.z;
       view.setPosition(spawnX, spawnZ, Math.random() * 6);
       this.root.add(view.group);
-      this.creatures.set(id, { view, home: { x: w.x, z: w.z }, kind: w.kind, timer: Math.random() * 3, state: w.spirit.state });
+      this.creatures.set(id, { view, home: { x: w.x, z: w.z }, kind: w.kind, timer: Math.random() * 3, state: w.spirit.state, aboard: false });
     }
 
     // 可交互对象
@@ -390,7 +613,7 @@ export class ExploreView {
         list.push({ kind: 'wild', id: w.id, x: v?.x ?? w.x, z: v?.z ?? w.z, label: `${w.blighted ? '蚀化的' : '野生的'}${name} Lv.${w.group[0]!.level}${w.group.length > 1 ? ` 等 ${w.group.length} 只` : ''}`, radius: 2.4 });
       }
       const a = arrivalPoint(this.island);
-      list.push({ kind: 'pier', id: 'pier', x: a.x, z: a.z + 1.2, label: '栈桥 · 出航', radius: 2.2 });
+      list.push({ kind: 'pier', id: 'pier', x: a.x, z: a.z + 1.9, label: '栈桥 · 出航', radius: 2.2 });
     }
     for (const [kid, v] of this.keepers) list.push({ kind: 'keeper', id: kid, x: v.x, z: v.z, label: `和${this.content.keepers.get(kid)!.name}说话`, radius: 2.4 });
     for (const [id, e] of this.creatures) {
@@ -418,19 +641,21 @@ export class ExploreView {
     const home = world.homes[PLAYER_ID]!;
     const seen = new Set<string>();
     this.rects = [];
+    this.staticPlatforms = [];
+    this.obstacles = [];
     for (const inst of Object.values(home.buildings)) {
       seen.add(inst.id);
       const def = this.content.buildings.get(inst.type)!;
       const fp = footprint(def, inst.rot);
       const key = `${inst.type}:${inst.x}:${inst.z}:${inst.rot}:${this.coreLevel}`;
       let entry = this.buildings.get(inst.id);
+      const y = foundationHeight(this.content, home, inst);
       if (!entry || entry.key !== key) {
         if (entry) {
           this.root.remove(entry.view.group);
           if (entry.foundation) this.root.remove(entry.foundation);
         }
         const view = makeBuildingView(inst.type, def.size.w, def.size.d, hashId(inst.id));
-        const y = foundationHeight(this.content, home, inst);
         view.group.position.set(inst.x + fp.w / 2, y, inst.z + fp.d / 2);
         view.group.rotation.y = -inst.rot * (Math.PI / 2);
         this.root.add(view.group);
@@ -450,10 +675,20 @@ export class ExploreView {
       entry.inst = inst;
       const crop = inst.crop ? { id: inst.crop.cropId, growth: inst.crop.progress / this.content.crops.get(inst.crop.cropId)!.growTicks } : null;
       entry.view.update({ built: inst.built, progress: def.buildWork ? inst.buildProgress / def.buildWork : 1, crop, working: !!inst.job && inst.workers.length > 0 }, this.t);
+      const cx = inst.x + fp.w / 2;
+      const cz = inst.z + fp.d / 2;
+      if (def.kind === 'dock') {
+        // 码头栈台可以走上去（一级台阶）；立柱、订单板亭、灯柱是细障碍（v0.6）
+        this.staticPlatforms.push({ x: cx, z: cz, yaw: 0, hw: fp.w / 2, hd: fp.d / 2, top: y + 0.25, wall: false });
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) this.obstacles.push({ x: cx + (sx * (fp.w - 0.3)) / 2, z: cz + (sz * (fp.d - 0.3)) / 2, r: 0.12 });
+        for (const sx of [-1, 1]) this.obstacles.push({ x: cx - fp.w / 2 + 0.8 + sx * 0.6, z: cz - fp.d / 2 + 0.6, r: 0.1 });
+        this.obstacles.push({ x: cx + fp.w / 2 - 0.3, z: cz - fp.d / 2 + 0.3, r: 0.08 });
+        continue;
+      }
       if (def.kind === 'field' || inst.type === 'path' || inst.type === 'flowerbed') continue;
-      if (inst.type === 'fence') this.rects.push({ x: inst.x + fp.w / 2, z: inst.z + fp.d / 2, hw: 0.5, hd: 0.12, low: true });
-      else if (inst.type === 'lamp') this.rects.push({ x: inst.x + fp.w / 2, z: inst.z + fp.d / 2, hw: 0.2, hd: 0.2 });
-      else if (def.kind !== 'decoration') this.rects.push({ x: inst.x + fp.w / 2, z: inst.z + fp.d / 2, hw: fp.w / 2 - 0.15, hd: fp.d / 2 - 0.15 });
+      if (inst.type === 'fence') this.rects.push({ x: cx, z: cz, hw: 0.5, hd: 0.12, low: true });
+      else if (inst.type === 'lamp') this.rects.push({ x: cx, z: cz, hw: 0.2, hd: 0.2 });
+      else if (def.kind !== 'decoration') this.rects.push({ x: cx, z: cz, hw: fp.w / 2 - 0.15, hd: fp.d / 2 - 0.15 });
     }
     for (const [id, e] of this.buildings) {
       if (seen.has(id)) continue;
@@ -463,34 +698,240 @@ export class ExploreView {
     }
   }
 
-  /** 每帧：玩家移动、镜头、絮灵游荡、交互检测。返回是否需要发送位置。 */
+  // ---------------------------------------------------------------- 乘坐 / 自动驾驶（播片与上下船）
+
+  private ridingY(): number {
+    const r = this.riding!;
+    return r.group.localToWorld(r.seat.clone()).y - this.root.position.y;
+  }
+
+  /** 站在一个移动的物体上（例如迫降中的云舟甲板）。seat 为该物体的局部坐标。 */
+  ride(group: THREE.Object3D, seat: THREE.Vector3, yaw = 0): void {
+    this.riding = { group, seat: seat.clone(), yaw };
+    this.player.speed = 0;
+  }
+
+  /** 下来：玩家留在当前位置，之后按普通物理（落到甲板 / 地面）。 */
+  unride(): void {
+    this.riding = null;
+  }
+
+  /** 让玩家自动走到某点（可选：途中起跳、到达后转向）。超时则直接放到目标点。 */
+  walkTo(x: number, z: number, opts: { run?: boolean; jumpAt?: number; jumpStrength?: number; faceYaw?: number; timeout?: number } = {}): Promise<void> {
+    this.autopilot?.resolve();
+    return new Promise((resolve) => {
+      this.autopilot = { x, z, run: !!opts.run, jumpAt: opts.jumpAt, jumpStrength: opts.jumpStrength, faceYaw: opts.faceYaw, resolve, timeout: opts.timeout ?? 6 };
+    });
+  }
+
+  /** 取消自动驾驶（跳过播片时）。 */
+  cancelWalk(): void {
+    const ap = this.autopilot;
+    this.autopilot = null;
+    ap?.resolve();
+  }
+
+  get scripted(): boolean {
+    return !!this.autopilot || !!this.riding;
+  }
+
+  /** 云舟局部坐标 → 本岛坐标。 */
+  private skiffToLocal(lx: number, lz: number): { x: number; z: number } {
+    const g = this.skiff!.view.group;
+    const yaw = g.rotation.y;
+    return { x: g.position.x + Math.cos(yaw) * lx + Math.sin(yaw) * lz, z: g.position.z - Math.sin(yaw) * lx + Math.cos(yaw) * lz };
+  }
+
+  private skiffYaw(): number {
+    return this.skiff?.view.group.rotation.y ?? 0;
+  }
+
+  /** 登船口外侧（码头 / 栈桥上）、登船口内侧（甲板上）、甲板座位（全部是本岛坐标）。 */
+  boardingPoints(): { outside: { x: number; z: number }; inside: { x: number; z: number }; seat: { x: number; z: number } } {
+    const gz = (SKIFF_GATE.z0 + SKIFF_GATE.z1) / 2;
+    const hw = skiffHalfWidth(gz);
+    const seat = this.skiff!.view.seats[0]!;
+    return {
+      outside: this.skiffToLocal(SKIFF_GATE.side * (hw + 0.75), gz),
+      inside: this.skiffToLocal(SKIFF_GATE.side * (hw - 0.4), gz),
+      seat: this.skiffToLocal(seat.x, seat.z),
+    };
+  }
+
+  /**
+   * 上船（v0.6）：沿码头 / 栈桥走到登船口外 → 跳上甲板 → 走到船头的位置站好；
+   * 队伍絮灵跟着蹦上来。纯表演，结束后再发出航意图。
+   */
+  async board(): Promise<void> {
+    if (!this.skiff || this.skiff.wrecked) return;
+    const P = this.player;
+    const pts = this.boardingPoints();
+    const yaw = this.skiffYaw();
+    const towardShip = yaw + (SKIFF_GATE.side < 0 ? Math.PI / 2 : -Math.PI / 2);
+    const far = Math.hypot(pts.outside.x - P.x, pts.outside.z - P.z) > 6;
+    await this.walkTo(pts.outside.x, pts.outside.z, { run: far, faceYaw: towardShip, timeout: 8 });
+    await this.walkTo(pts.inside.x, pts.inside.z, { jumpAt: 1.6, jumpStrength: 6, timeout: 3 });
+    // 絮灵：一只接一只蹦上甲板
+    let i = 0;
+    for (const e of this.creatures.values()) {
+      if (e.kind !== 'own' || e.state !== 'party') continue;
+      const seat = this.skiff.view.seats[1 + i];
+      i++;
+      if (!seat) {
+        e.view.group.visible = false;
+        continue;
+      }
+      const at = this.skiffToLocal(seat.x, seat.z);
+      e.aboard = true;
+      e.view.hop(5);
+      e.view.moveTo(at.x, at.z);
+    }
+    await this.walkTo(pts.seat.x, pts.seat.z, { faceYaw: yaw, timeout: 3 });
+  }
+
+  /** 航行目的地：玩家先站在停泊云舟的甲板座位上，镜头对准（降落后从这里下船）。 */
+  placeOnDeck(): void {
+    if (!this.skiff || this.skiff.wrecked || !this.skiffPlatform) return;
+    const seat = this.boardingPoints().seat;
+    this.player.setPosition(seat.x, seat.z, this.skiffYaw(), this.skiffPlatform.top);
+    this.camT.set(seat.x, this.skiffPlatform.top + 1.15, seat.z);
+    // 镜头在船头（海）那一侧，看向岛内：下船后往岛上走，正好在画面里
+    this.camYaw = this.skiffYaw();
+    this.camPitch = 0.38;
+    this.camDist = 9;
+  }
+
+  /** 下船（v0.6）：从船头位置走到登船口 → 跳到栈桥 / 码头上 → 往岸上走两步。 */
+  async disembark(): Promise<void> {
+    if (!this.skiff || this.skiff.wrecked) return;
+    const P = this.player;
+    const pts = this.boardingPoints();
+    const seat = pts.seat;
+    P.setPosition(seat.x, seat.z, this.skiffYaw(), this.skiffPlatform!.top);
+    let i = 0;
+    for (const e of this.creatures.values()) {
+      if (e.kind !== 'own' || e.state !== 'party') continue;
+      const s = this.skiff.view.seats[1 + i];
+      i++;
+      if (!s) continue;
+      const at = this.skiffToLocal(s.x, s.z);
+      e.aboard = true;
+      e.view.setPosition(at.x, at.z, this.skiffYaw());
+    }
+    await new Promise((r) => setTimeout(r, 250));
+    await this.walkTo(pts.inside.x, pts.inside.z, { timeout: 3 });
+    const away = { x: pts.outside.x + (pts.outside.x - pts.inside.x) * 1.6, z: pts.outside.z + (pts.outside.z - pts.inside.z) * 1.6 };
+    await this.walkTo(away.x, away.z, { jumpAt: 1.9, jumpStrength: 3.6, timeout: 3 });
+    for (const e of this.creatures.values()) {
+      if (!e.aboard) continue;
+      e.aboard = false;
+      e.view.hop(4);
+    }
+  }
+
+  // ---------------------------------------------------------------- 表演用的临时絮灵
+
+  addActor(id: string, view: CreatureView, x: number, z: number, yaw: number): void {
+    this.removeActor(id);
+    view.setPosition(x, z, yaw);
+    this.root.add(view.group);
+    this.actors.set(id, view);
+  }
+
+  actor(id: string): CreatureView | undefined {
+    return this.actors.get(id);
+  }
+
+  removeActor(id: string): void {
+    const v = this.actors.get(id);
+    if (!v) return;
+    this.root.remove(v.group);
+    v.dispose();
+    this.actors.delete(id);
+  }
+
+  // ---------------------------------------------------------------- 每帧
+
+  /** 每帧：玩家移动、镜头、絮灵游荡、交互检测。 */
   update(dt: number, input: Input | null, send: (x: number, z: number, yaw: number) => void, controlsEnabled: boolean): void {
     this.t += dt;
     const t = this.t;
     const P = this.player;
-    // 玩家移动（相对镜头）
-    const ax = controlsEnabled && input ? input.axis() : { x: 0, y: 0, run: false };
-    let ix = ax.x;
-    let iy = ax.y;
-    const m = Math.hypot(ix, iy);
-    if (m > 1) {
-      ix /= m;
-      iy /= m;
+    const prev = { x: P.x, z: P.z };
+    // 玩家移动：手动（相对镜头）或自动驾驶（世界坐标）
+    let mx = 0;
+    let mz = 0;
+    let mag = 0;
+    let run = false;
+    const ap = this.autopilot;
+    if (ap) {
+      ap.timeout -= dt;
+      const dx = ap.x - P.x;
+      const dz = ap.z - P.z;
+      const d = Math.hypot(dx, dz);
+      if (ap.jumpAt !== undefined && !ap.jumped && d < ap.jumpAt) {
+        ap.jumped = P.jump(ap.jumpStrength);
+        // 起跳时朝着落点、带上刚好够的水平速度（站定起跳也能跳过去）
+        if (ap.jumped) {
+          P.yaw = Math.atan2(dx, dz);
+          P.speed = Math.max(P.speed, d / 0.8);
+        }
+      }
+      if ((d < 0.18 && !P.airborne) || ap.timeout <= 0) {
+        if (ap.timeout <= 0) P.setPosition(ap.x, ap.z, P.yaw, this.groundAt(ap.x, ap.z, 99));
+        if (ap.faceYaw !== undefined) P.yaw = ap.faceYaw;
+        P.speed = 0;
+        this.autopilot = null;
+        ap.resolve();
+      } else {
+        mx = dx / d;
+        mz = dz / d;
+        mag = Math.min(1, d / 0.6 + 0.35);
+        run = ap.run;
+      }
+    } else if (controlsEnabled && input) {
+      const ax = input.axis();
+      let ix = ax.x;
+      let iy = ax.y;
+      const m = Math.hypot(ix, iy);
+      if (m > 1) {
+        ix /= m;
+        iy /= m;
+      }
+      mag = Math.min(1, m);
+      run = ax.run;
+      const fx = -Math.sin(this.camYaw);
+      const fz = -Math.cos(this.camYaw);
+      const rx = Math.cos(this.camYaw);
+      const rz = -Math.sin(this.camYaw);
+      mx = rx * ix + fx * iy;
+      mz = rz * ix + fz * iy;
+      if (input.hit('Space')) P.jump();
     }
-    const mag = Math.min(1, m);
-    const fx = -Math.sin(this.camYaw);
-    const fz = -Math.cos(this.camYaw);
-    const rx = Math.cos(this.camYaw);
-    const rz = -Math.sin(this.camYaw);
-    const mx = rx * ix + fx * iy;
-    const mz = rz * ix + fz * iy;
+    // 水深：涉水变慢，深水游泳
+    const inWater = this.terrain.isWater(P.x, P.z) && !this.riding;
+    const depth = inWater ? Math.max(0, WATER_LEVEL - this.terrain.height(P.x, P.z)) : 0;
+    P.water = { y: WATER_LEVEL, depth: P.feetY > WATER_LEVEL + 0.3 && P.airborne ? 0 : depth };
+    const wade = clamp(depth / HumanoidView.SWIM_DEPTH, 0, 1);
+    const landSpeed = (run ? 4.6 : 3.1) * (1 - 0.45 * wade * (1 - P.swim));
+    const swimSpeed = run ? 2.1 : 1.5;
+    const top = lerp(landSpeed, swimSpeed, P.swim);
     // 做动作时站定；空中保持起跳时的速度
-    const target = P.busy ? 0 : mag * (ax.run ? 4.6 : 3.1);
-    if (controlsEnabled && input?.hit('Space')) P.jump();
-    if (!P.airborne) P.speed = lerp(P.speed, target, Math.min(1, dt * (target > P.speed ? 6 : 9)));
-    if (mag > 0.08 && !P.busy) P.yaw += angDiff(P.yaw, Math.atan2(mx, mz)) * Math.min(1, dt * (P.airborne ? 3 : 10));
-    P.x += Math.sin(P.yaw) * P.speed * dt;
-    P.z += Math.cos(P.yaw) * P.speed * dt;
+    const target = P.busy ? 0 : mag * top;
+    if (this.riding) {
+      const r = this.riding;
+      const w = r.group.localToWorld(r.seat.clone()).sub(this.root.position);
+      P.x = w.x;
+      P.z = w.z;
+      P.speed = 0;
+      const e = new THREE.Euler().setFromQuaternion(r.group.getWorldQuaternion(new THREE.Quaternion()), 'YXZ');
+      P.yaw = e.y + r.yaw;
+    } else {
+      if (!P.airborne) P.speed = lerp(P.speed, target, Math.min(1, dt * (target > P.speed ? 6 : 9)));
+      if (mag > 0.08 && !P.busy) P.yaw += angDiff(P.yaw, Math.atan2(mx, mz)) * Math.min(1, dt * (P.airborne ? 3 : P.swimming ? 4 : 10));
+      P.x += Math.sin(P.yaw) * P.speed * dt;
+      P.z += Math.cos(P.yaw) * P.speed * dt;
+    }
     const push = (o: { x: number; z: number }, x: number, z: number, r: number) => {
       const dx = o.x - x;
       const dz = o.z - z;
@@ -500,32 +941,29 @@ export class ExploreView {
         o.z = z + (dz / d) * r;
       }
     };
-    for (const o of this.obstacles) push(P, o.x, o.z, o.r + 0.3);
-    // 建筑：矩形碰撞，沿穿透最浅的方向推出去
-    for (const r of this.rects) {
-      if (r.low && P.airborne) continue;
-      const dx = P.x - r.x;
-      const dz = P.z - r.z;
-      const px = r.hw + 0.3 - Math.abs(dx);
-      const pz = r.hd + 0.3 - Math.abs(dz);
-      if (px > 0 && pz > 0) {
-        if (px < pz) P.x += Math.sign(dx || 1) * px;
-        else P.z += Math.sign(dz || 1) * pz;
+    if (!this.riding) {
+      for (const o of this.obstacles) push(P, o.x, o.z, o.r + 0.3);
+      // 建筑：矩形碰撞，沿穿透最浅的方向推出去
+      for (const r of this.rects) {
+        if (r.low && P.airborne) continue;
+        const dx = P.x - r.x;
+        const dz = P.z - r.z;
+        const px = r.hw + 0.3 - Math.abs(dx);
+        const pz = r.hd + 0.3 - Math.abs(dz);
+        if (px > 0 && pz > 0) {
+          if (px < pz) P.x += Math.sign(dx || 1) * px;
+          else P.z += Math.sign(dz || 1) * pz;
+        }
       }
-    }
-    for (const { node } of this.props.values()) push(P, node.x, node.z, node.kind === 'tree' ? 0.55 : 0.6);
-    // 水面挡路（池塘、溪流）
-    if (this.terrain.isWater(P.x, P.z)) {
-      P.x = this.lastDry.x;
-      P.z = this.lastDry.z;
-      P.speed *= 0.5;
-    } else this.lastDry = { x: P.x, z: P.z };
-    const th = Math.atan2(P.z, P.x);
-    const lim = this.terrain.rim(th) * 0.8;
-    const rr = Math.hypot(P.x, P.z);
-    if (rr > lim) {
-      P.x *= lim / rr;
-      P.z *= lim / rr;
+      this.collidePlatforms(prev);
+      for (const { node } of this.props.values()) push(P, node.x, node.z, node.kind === 'tree' ? 0.55 : 0.6);
+      const th = Math.atan2(P.z, P.x);
+      const lim = this.terrain.rim(th) * 0.8;
+      const rr = Math.hypot(P.x, P.z);
+      if (rr > lim) {
+        P.x *= lim / rr;
+        P.z *= lim / rr;
+      }
     }
     // 看向最近的絮灵
     let best: { x: number; z: number } | null = null;
@@ -538,7 +976,7 @@ export class ExploreView {
       }
     }
     P.lookAt = best;
-    P.update(dt, t, this.ground);
+    P.update(dt, t, this.playerGround);
 
     // 发送位置（节流）
     this.moveSentAt += dt;
@@ -550,9 +988,13 @@ export class ExploreView {
 
     // 絮灵：游荡 / 跟随
     let followIdx = 0;
+    const groundFloat = this.creatureGround(false);
+    const groundAboard = this.creatureGround(true);
     for (const e of this.creatures.values()) {
       const v = e.view;
-      if (e.kind === 'own' && e.state === 'party') {
+      if (e.aboard) {
+        // 上船 / 下船途中：自己的落点由 board() / disembark() 给
+      } else if (e.kind === 'own' && e.state === 'party') {
         const slot = followIdx++;
         const bx = P.x - Math.sin(P.yaw) * (1.4 + slot * 0.6) + Math.cos(P.yaw) * (slot - 1) * 0.9;
         const bz = P.z - Math.cos(P.yaw) * (1.4 + slot * 0.6) - Math.sin(P.yaw) * (slot - 1) * 0.9;
@@ -571,9 +1013,18 @@ export class ExploreView {
         }
         v.lookAt = Math.hypot(P.x - v.x, P.z - v.z) < 4.5 ? { x: P.x, z: P.z } : null;
       }
-      push(v, P.x, P.z, 0.4 + v.look.size * 0.9);
-      v.update(dt, t, this.ground);
+      if (!e.aboard) {
+        push(v, P.x, P.z, 0.4 + v.look.size * 0.9);
+        // 停着的云舟对絮灵也是实体
+        const sp = this.skiffPlatform;
+        if (sp) {
+          const l = this.platformLocal(sp, v.x, v.z, 0.3);
+          if (l) push(v, sp.x, sp.z, Math.hypot(l.lx, l.lz) + 0.4);
+        }
+      }
+      v.update(dt, t, e.aboard ? groundAboard : groundFloat);
     }
+    for (const v of this.actors.values()) v.update(dt, t, groundFloat);
     for (const k of this.keepers.values()) {
       k.lookAt = Math.hypot(P.x - k.x, P.z - k.z) < 6 ? { x: P.x, z: P.z } : null;
       if (k.lookAt) k.yaw += angDiff(k.yaw, Math.atan2(P.x - k.x, P.z - k.z)) * Math.min(1, dt * 2);
@@ -583,7 +1034,18 @@ export class ExploreView {
     this.skiff?.view.update(t, 0);
     if (this.skiff?.wrecked && Math.random() < dt * 3) {
       const g = this.skiff.view.group.position;
-      this.fx.spawn('puff', new THREE.Vector3(g.x, g.y + 1.2, g.z), 1, { size: 0.9, vy: 0.9, life: 2.2, spread: 0.4, color: 0x9a9298 });
+      this.fx.spawn('puff', new THREE.Vector3(g.x, g.y + 1.4, g.z), 1, { size: 0.9, vy: 0.9, life: 2.2, spread: 0.4, color: 0x9a9298 });
+    }
+    if (this.orb) {
+      const base = this.orbPos();
+      this.orb.position.set(base.x, base.y + Math.sin(t * 1.6) * 0.12, base.z);
+      for (const ch of this.orb.children) {
+        const i = ch.userData['i'] as number | undefined;
+        if (i === undefined) continue;
+        const a = t * 1.3 + (i / 6) * Math.PI * 2;
+        ch.position.set(Math.cos(a) * 0.55, Math.sin(t * 2 + i) * 0.25, Math.sin(a) * 0.55);
+      }
+      (this.orb.userData['core'] as THREE.Mesh).rotation.y = t;
     }
 
     // 镜头
@@ -592,7 +1054,7 @@ export class ExploreView {
       this.camPitch = clamp(this.camPitch + input.dragDY * 0.004, 0.08, 1.25);
       this.camDist = clamp(this.camDist * (1 + input.wheel * 0.0012), 3.5, 18);
     }
-    const goal = new THREE.Vector3(P.x, this.ground(P.x, P.z) + 1.15, P.z);
+    const goal = new THREE.Vector3(P.x, P.feetY + 1.15, P.z);
     this.camT.lerp(goal, Math.min(1, dt * 6));
     if (this.cameraLocked) {
       this.env.update(dt, t, this.camera, this.camT);
@@ -603,7 +1065,7 @@ export class ExploreView {
     const cp = Math.cos(this.camPitch);
     this.camera.position.set(this.camT.x + Math.sin(this.camYaw) * cp * this.camDist, this.camT.y + Math.sin(this.camPitch) * this.camDist, this.camT.z + Math.cos(this.camYaw) * cp * this.camDist);
     const cth = Math.atan2(this.camera.position.z, this.camera.position.x);
-    if (Math.hypot(this.camera.position.x, this.camera.position.z) < this.terrain.rim(cth)) this.camera.position.y = Math.max(this.camera.position.y, this.ground(this.camera.position.x, this.camera.position.z) + 0.6);
+    if (Math.hypot(this.camera.position.x, this.camera.position.z) < this.terrain.rim(cth)) this.camera.position.y = Math.max(this.camera.position.y, Math.max(this.ground(this.camera.position.x, this.camera.position.z), WATER_LEVEL) + 0.6);
     this.camera.lookAt(this.camT);
     this.env.update(dt, t, this.camera, this.camT);
     this.fx.update(dt);
@@ -616,8 +1078,61 @@ export class ExploreView {
     this.updateNearest();
   }
 
+  /**
+   * 平台碰撞：在船身下方 → 船身是墙；站在甲板上 → 栏杆挡着，只有登船口能出去。
+   */
+  private collidePlatforms(prev: { x: number; z: number }): void {
+    const P = this.player;
+    for (const pl of this.platforms) {
+      if (!pl.wall) continue;
+      const l = this.platformLocal(pl, P.x, P.z, 0.3);
+      const onTop = pl.deck ? P.feetY >= pl.top - 0.05 : P.feetY > pl.top - STEP;
+      if (!onTop) {
+        if (!l) continue;
+        // 上船时跳过船舷
+        if (this.autopilot?.jumped && P.airborne) continue;
+        // 从下面撞上船身：按船舷轮廓推出去
+        const half = pl.deck ? skiffCollisionHalfWidth(l.lz) + 0.3 : pl.hw + 0.3;
+        if (Math.abs(l.lx) < half && Math.abs(l.lz) < pl.hd + 0.3) {
+          const px = half - Math.abs(l.lx);
+          const pz = pl.hd + 0.3 - Math.abs(l.lz);
+          let nx = l.lx;
+          let nz = l.lz;
+          if (px < pz) nx = Math.sign(l.lx || 1) * half;
+          else nz = Math.sign(l.lz || 1) * (pl.hd + 0.3);
+          const c = Math.cos(pl.yaw);
+          const s = Math.sin(pl.yaw);
+          P.x = pl.x + nx * c + nz * s;
+          P.z = pl.z - nx * s + nz * c;
+        }
+        continue;
+      }
+      if (!pl.deck) continue;
+      // 在甲板上：上一帧在船上的话，不能越过栏杆（登船口除外）
+      const lp = this.platformLocal(pl, prev.x, prev.z);
+      if (!lp || !this.onDeck(pl, lp.lx, lp.lz)) continue;
+      const lNow = this.platformLocal(pl, P.x, P.z, 2) ?? lp;
+      const inGate = Math.sign(lNow.lx) === SKIFF_GATE.side && lNow.lz > SKIFF_GATE.z0 + 0.1 && lNow.lz < SKIFF_GATE.z1 - 0.1;
+      const lim = skiffHalfWidth(lNow.lz) - 0.25;
+      let lx = lNow.lx;
+      let lz = clamp(lNow.lz, -1.95, 1.6);
+      if (!inGate) lx = clamp(lx, -lim, lim);
+      if (lx !== lNow.lx || lz !== lNow.lz) {
+        const c = Math.cos(pl.yaw);
+        const s = Math.sin(pl.yaw);
+        P.x = pl.x + lx * c + lz * s;
+        P.z = pl.z - lx * s + lz * c;
+      }
+    }
+  }
+
   private updateNearest(): void {
     const P = this.player;
+    // 游泳、上下船时不能交互
+    if (P.swimming || this.scripted) {
+      this.nearest = null;
+      return;
+    }
     // 最近的可交互对象（在面前优先）
     let near: Interactable | null = null;
     let nd = Infinity;
@@ -658,7 +1173,7 @@ export class ExploreView {
   /** 当前探索镜头的机位（播片结束时回到这里）。 */
   followPose(): { pos: THREE.Vector3; look: THREE.Vector3 } {
     const P = this.player;
-    const look = new THREE.Vector3(P.x, this.ground(P.x, P.z) + 1.15, P.z);
+    const look = new THREE.Vector3(P.x, P.feetY + 1.15, P.z);
     const cp = Math.cos(this.camPitch);
     return { pos: new THREE.Vector3(look.x + Math.sin(this.camYaw) * cp * this.camDist, look.y + Math.sin(this.camPitch) * this.camDist, look.z + Math.cos(this.camYaw) * cp * this.camDist), look };
   }
@@ -687,7 +1202,10 @@ export class ExploreView {
   }
 
   dispose(): void {
+    this.autopilot?.resolve();
+    this.autopilot = null;
     for (const e of this.creatures.values()) e.view.dispose();
+    for (const v of this.actors.values()) v.dispose();
     for (const k of this.keepers.values()) k.dispose();
     this.player.dispose();
     this.fx.clear();
@@ -707,4 +1225,3 @@ function lookKey(content: ContentDb, s: Spirit): string {
 function lookKeyOf(v: CreatureView): string {
   return (v as unknown as { lookKey?: string }).lookKey ?? '';
 }
-

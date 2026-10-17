@@ -132,6 +132,11 @@ export class UiRoot {
     this.renderDialogue();
   }
 
+  /** 一口气翻完所有对话（测试与场景直达用；对话结束的回调照常执行）。 */
+  skipDialogues(): void {
+    for (let i = 0; i < 200 && this.dialogueOpen; i++) this.advanceDialogue();
+  }
+
   private onKey(e: KeyboardEvent): void {
     if (this.dialogueOpen) {
       if (e.key === 'Enter' || e.key === ' ' || e.key === 'e' || e.key === 'E' || e.key === 'Escape') {

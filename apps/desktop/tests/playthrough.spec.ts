@@ -57,10 +57,14 @@ async function fight(win: Page, prefer: RegExp[], capture = false): Promise<void
   await win.waitForTimeout(500);
 }
 
-/** 出航：云舟沿航线飞过去（v0.5）；可截航行中的画面，然后按空格加速，等降落。 */
-async function sail(win: Page, islandId: string, shot?: string, voyageShots?: string[]): Promise<void> {
-  const r = await g<{ ok: boolean; error?: string }>(win, `g.act({ type: 'sail', islandId: '${islandId}' })`);
-  expect(r.ok, r.error).toBe(true);
+/** 出航：先上船（v0.6），云舟沿航线飞过去；可截航行中的画面，然后按空格加速，等降落、下船。 */
+async function sail(win: Page, islandId: string, shot?: string, voyageShots?: string[], boardShot?: string): Promise<void> {
+  const boarding = g<boolean>(win, `g.sail('${islandId}')`);
+  if (boardShot) {
+    await win.waitForTimeout(900);
+    await win.screenshot({ path: boardShot });
+  }
+  expect(await boarding).toBe(true);
   for (let i = 0; i < 30 && (await g<string>(win, 'g.mode()')) !== 'voyage'; i++) await win.waitForTimeout(100);
   expect(await g<string>(win, 'g.mode()')).toBe('voyage');
   for (const path of voyageShots ?? []) {
@@ -69,8 +73,8 @@ async function sail(win: Page, islandId: string, shot?: string, voyageShots?: st
   }
   await win.keyboard.press('Space');
   const target = islandId === 'home' ? 'home:p1' : islandId;
-  for (let i = 0; i < 80; i++) {
-    const done = await g<boolean>(win, `g.mode() !== 'voyage' && g.world().players.p1.islandId === '${target}'`);
+  for (let i = 0; i < 120; i++) {
+    const done = await g<boolean>(win, `!['voyage', 'landing'].includes(g.mode()) && g.world().players.p1.islandId === '${target}'`);
     if (done) break;
     await win.waitForTimeout(150);
   }
@@ -111,9 +115,9 @@ test('新手引导与核心循环', async () => {
   await win.getByText('开始新的旅程').click();
   await win.waitForTimeout(2600);
   await win.screenshot({ path: 'screenshots/02a-opening.png' });
-  await win.waitForTimeout(5200);
+  await win.waitForTimeout(5000);
   await win.screenshot({ path: 'screenshots/02b-opening-crash.png' });
-  await win.waitForTimeout(3600);
+  await win.waitForTimeout(7000);
   await win.screenshot({ path: 'screenshots/02c-opening-light.png' });
   await skipCutscene(win);
   await win.waitForTimeout(500);
@@ -133,7 +137,9 @@ test('新手引导与核心循环', async () => {
   await win.keyboard.press('KeyE');
   await win.waitForTimeout(700);
   await closeDialogues(win);
-  await win.waitForTimeout(1200);
+  // 蚀化絮灵冲过来（袭击播片），再转场进战斗（v0.6）
+  await skipCutscene(win, 'screenshots/03b-ambush.png');
+  for (let i = 0; i < 30 && (await g<string>(win, 'g.mode()')) !== 'battle'; i++) await win.waitForTimeout(100);
   expect(await g(win, 'g.mode()')).toBe('battle');
   await win.waitForTimeout(800);
   await win.screenshot({ path: 'screenshots/04-battle-tutorial.png' });
@@ -141,7 +147,7 @@ test('新手引导与核心循环', async () => {
   expect(await g(win, 'g.world().characters.p1.tutorial.step')).toBe(3);
 
   // 3 出航、捕获
-  await sail(win, 'wheatSlope', 'screenshots/05a-arrival.png', ['screenshots/04a-voyage-depart.png', 'screenshots/04b-voyage-cruise.png']);
+  await sail(win, 'wheatSlope', 'screenshots/05a-arrival.png', ['screenshots/04a-voyage-depart.png', 'screenshots/04b-voyage-cruise.png'], 'screenshots/04-boarding.png');
   await win.screenshot({ path: 'screenshots/05-wheat-slope.png' });
 
   // 动作：对着树按 E 砍树（斧子），空格起跳（v0.5）
@@ -153,7 +159,7 @@ test('新手引导与核心循环', async () => {
   await win.keyboard.press('KeyE');
   await win.waitForTimeout(330);
   await win.screenshot({ path: 'screenshots/05c-chop.png' });
-  await win.waitForTimeout(900);
+  for (let i = 0; i < 30 && (await g<number>(win, `g.world().characters.p1.backpack.wood ?? 0`)) <= woodBefore; i++) await win.waitForTimeout(100);
   expect(await g<number>(win, `g.world().characters.p1.backpack.wood ?? 0`)).toBeGreaterThan(woodBefore);
   await win.keyboard.press('Space');
   await win.waitForTimeout(260);
@@ -169,7 +175,10 @@ test('新手引导与核心循环', async () => {
     await win.waitForTimeout(200);
     const r = await g<{ ok: boolean }>(win, `g.act({ type: 'encounter', wildId: '${t.id}' })`);
     if (!r.ok) continue;
-    await skipCutscene(win, attempt === 0 ? 'screenshots/05b-first-wild.png' : undefined);
+    if (attempt === 0) {
+      await win.waitForTimeout(300);
+      await win.screenshot({ path: 'screenshots/05b-battle-transition.png' });
+    }
     await win.waitForTimeout(1500);
     if (attempt === 0) await win.screenshot({ path: 'screenshots/06-battle-wild.png' });
     await fight(win, [], true);
@@ -207,7 +216,7 @@ test('新手引导与核心循环', async () => {
   expect(await g(win, 'g.world().characters.p1.tutorial.step')).toBe(5);
 
   // 5 点亮第一盏灯
-  await g(win, 'g.teleport(0, 2.4)');
+  await g(win, 'g.teleport(0, 2.4, Math.PI)');
   await win.waitForTimeout(400);
   expect(await g(win, 'g.nearest()?.kind')).toBe('core');
   await win.keyboard.press('KeyE');
@@ -218,10 +227,11 @@ test('新手引导与核心循环', async () => {
 
   // 走到家里打工的絮灵身边按 E → 直接带上它（Lynx 反馈：不用进菜单）；之后放回田地
   await win.waitForTimeout(600);
-  const spot = await g<{ x: number; z: number } | null>(win, `(() => { const it = g.interactables().find((i) => i.kind === 'recruit' && i.id === '${worker}'); return it ? { x: it.x, z: it.z } : null; })()`);
+  // 它在往工位走，按它当前的位置站到旁边
+  const spot = await g<{ x: number; z: number } | null>(win, `g.creature('${worker}')`);
   expect(spot).not.toBeNull();
-  await g(win, `g.teleport(${spot!.x + 0.8}, ${spot!.z})`);
-  await win.waitForTimeout(400);
+  await g(win, `g.teleport(g.creature('${worker}').x + 0.7, g.creature('${worker}').z, -Math.PI / 2)`);
+  await win.waitForTimeout(150);
   expect(await g(win, 'g.nearest()?.kind')).toBe('recruit');
   await win.screenshot({ path: 'screenshots/08b-recruit.png' });
   await win.keyboard.press('KeyE');
@@ -264,7 +274,7 @@ test('新手引导与核心循环', async () => {
 
   // 守岛人
   await sail(win, 'heFarm');
-  await g(win, 'g.teleport(1.5, 2.2)');
+  await g(win, 'g.teleport(1.5, 2.2, Math.PI)');
   await win.waitForTimeout(500);
   expect(await g(win, 'g.nearest()?.kind')).toBe('keeper');
   await win.keyboard.press('KeyE');
