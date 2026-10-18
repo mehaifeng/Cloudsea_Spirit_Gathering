@@ -17,7 +17,7 @@ export class UiRoot {
   private readonly modal = h('div', { id: 'modal', class: 'hidden' });
   private readonly dialogueBox = h('div', { id: 'dialogue', class: 'hidden' });
   private modalStack: Array<{ render: () => HTMLElement; onClose?: () => void }> = [];
-  private dialogueQueue: Array<{ who: string; lines: string[]; title?: string; done?: () => void }> = [];
+  private dialogueQueue: Array<{ who: string; lines: string[]; title?: string; done?: () => void; generated?: { onBlock: (line: string) => void } }> = [];
   private dialogueIndex = 0;
 
   constructor(root: HTMLElement) {
@@ -92,8 +92,9 @@ export class UiRoot {
     else focusFirst(this.modal);
   }
 
-  say(who: string, lines: readonly string[], title?: string, done?: () => void): void {
-    this.dialogueQueue.push({ who, lines: [...lines], ...(title ? { title } : {}), ...(done ? { done } : {}) });
+  /** generated：AI 生成的话（灵性模式，M3-4）：标出来，并给一个“屏蔽这句”。 */
+  say(who: string, lines: readonly string[], title?: string, done?: () => void, generated?: { onBlock: (line: string) => void }): void {
+    this.dialogueQueue.push({ who, lines: [...lines], ...(title ? { title } : {}), ...(done ? { done } : {}), ...(generated ? { generated } : {}) });
     if (this.dialogueQueue.length === 1) {
       this.dialogueIndex = 0;
       this.renderDialogue();
@@ -112,8 +113,15 @@ export class UiRoot {
       h(
         'div',
         { class: 'panel', onclick: () => this.advanceDialogue() },
-        h('div', { class: 'who' }, cur.title ? `${cur.who} ·「${cur.title}」` : cur.who),
+        h('div', { class: 'who' }, cur.title ? `${cur.who} ·「${cur.title}」` : cur.who, cur.generated ? h('span', { class: 'gen-tag', title: '灵性模式：这句话由你配置的 AI 服务实时生成' }, 'AI 生成') : null),
         h('div', { class: 'line' }, cur.lines[this.dialogueIndex] ?? ''),
+        cur.generated
+          ? h('button', { class: 'gen-block', onclick: (e: Event) => {
+              e.stopPropagation();
+              cur.generated!.onBlock(cur.lines[this.dialogueIndex] ?? '');
+              this.advanceDialogue();
+            } }, '不合适？屏蔽这句')
+          : null,
         h('div', { class: 'more' }, last ? '〔Enter / 点击 关闭〕' : '〔Enter / 点击 继续〕'),
       ),
     );

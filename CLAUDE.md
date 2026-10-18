@@ -21,7 +21,7 @@ DESIGN.md 中标〔补〕的条目是 Claude 按设计精神补的细节，视�
 - 测试：Vitest
 - 包管理：pnpm workspaces
 
-## 目录结构（计划；已建：sim、content、render、net、ui、apps/desktop、tools/battle-sim）
+## 目录结构（计划；已建：sim、content、render、net、ai、ui、apps/desktop、tools/battle-sim）
 ```
 packages/
   sim/        纯游戏逻辑：战斗（含战斗搜索 AI）、繁殖、经济、世界状态（星图 + 活跃岛实例）、存档迁移。无渲染、无 IO、无 DOM

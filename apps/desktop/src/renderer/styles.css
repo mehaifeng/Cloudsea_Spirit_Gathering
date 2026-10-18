@@ -79,8 +79,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #f6d7b8; use
 .tag.warn { border-color: var(--bad); color: var(--bad); background: #fbe9e3; transform: rotate(-1.5deg); }
 .tag.good { border-color: var(--good); color: var(--good); background: #e5f2ea; }
 kbd { display: inline-block; min-width: 22px; padding: 0 6px; border: 1.5px solid var(--ink); border-radius: 5px; background: var(--paper); color: var(--ink); font: 700 14px/20px var(--f-body); text-align: center; box-shadow: 1px 1px 0 var(--ink); }
-input[type='text'] { font: inherit; padding: 6px 10px; border: 1.5px solid var(--ink); border-radius: var(--wobble-sm); background: var(--paper); color: var(--ink); }
-input[type='text']:focus { border-color: var(--stamp); outline: none; box-shadow: 2px 2px 0 var(--stamp); }
+input[type='text'], input[type='password'], input[type='number'] { font: inherit; padding: 6px 10px; border: 1.5px solid var(--ink); border-radius: var(--wobble-sm); background: var(--paper); color: var(--ink); }
+input[type='text']:focus, input[type='password']:focus, input[type='number']:focus { border-color: var(--stamp); outline: none; box-shadow: 2px 2px 0 var(--stamp); }
 
 /* ---------- 抬头显示 ---------- */
 #hud-tl, #hud-tr { position: fixed; top: 14px; display: flex; gap: 8px; align-items: center; pointer-events: none; }
@@ -237,3 +237,9 @@ body:has(#dialogue:not(.hidden)) #hints { display: none; }
 .nameplate.battle { border-color: var(--stamp); color: var(--stamp); }
 #gallery-labels { position: fixed; inset: 0; pointer-events: none; }
 #gallery-labels .nameplate { position: absolute; left: 0; top: 0; font-size: 12px; }
+
+/* 灵性模式（M3-4）：AI 生成内容的标记与屏蔽 */
+.gen-tag { margin-left: 8px; font-size: 11px; padding: 1px 6px; border: 1px solid currentColor; border-radius: 8px; opacity: .6; font-family: var(--f-body); }
+.gen-block { position: absolute; right: 14px; top: 10px; font-size: 12px; background: none; border: none; color: var(--ink); opacity: .55; cursor: pointer; text-decoration: underline; }
+.gen-block:hover { opacity: .9; }
+#dialogue .panel { position: relative; }

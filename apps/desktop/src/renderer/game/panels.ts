@@ -54,6 +54,7 @@ import {
 } from '@cloudsea/sim';
 import { button, elementBadge, elementIcon, h, icon } from '@cloudsea/ui';
 import { PLAYER_ID } from './session';
+import { llmBridge, type LlmPublicSettings } from './spirit';
 import { conditionText, elementBadges, itemName, spiritTitle, statBlock, stateLabel } from './text';
 import type { UiRoot } from './uiRoot';
 
@@ -70,6 +71,8 @@ export interface Ctx {
   sail(islandId: string): Promise<boolean>;
   /** 联机（M2）。 */
   readonly net: NetCtx;
+  /** 灵性模式（M3-4）：本局的调用统计；设置改了以后让房主同步世界的模式。 */
+  readonly spirit: { stats(): { calls: number; fallbacks: number; lastError: string | null } | null; sync(): Promise<void> };
 }
 
 /** 菜单里“联机”页需要的操作（M2）。 */
@@ -422,9 +425,70 @@ function settingsTab(ctx: Ctx): HTMLElement {
     h('div', { class: 'muted' }, '游戏每到新的一天、以及每分钟会自动存档。世界只在游戏运行时流逝。'),
     h('h3', {}, '导入絮灵码'),
     h('div', { class: 'row' }, input, button('导入', () => void doAndRefresh(ctx, { type: 'importSpirit', code: input.value }, '外来絮灵来到了你的家园（不能繁殖、不能参加剧情战斗）'))),
+    spiritSection(ctx),
     h('h3', {}, '离开'),
     h('div', { class: 'row' }, button('存档并回到标题', () => void ctx.saveNow().then(() => ctx.quitToTitle()))),
   );
+}
+
+/** 灵性模式设置（M3-4，DESIGN 11.5）：key 只能写进去，读不出来（铁律 8）。 */
+let llmCache: LlmPublicSettings | null = null;
+let llmLoading = false;
+
+function spiritSection(ctx: Ctx): HTMLElement {
+  const llm = llmBridge();
+  const box = h('div', { class: 'col' }, h('h3', {}, '灵性模式（自带 AI 服务）'));
+  if (!llm) return (box.append(h('div', { class: 'muted' }, '网页试玩版没有灵性模式。')), box);
+  if (ctx.net.role() === 'guest') return (box.append(h('div', { class: 'muted' }, '联机时只用房主的 AI 服务；生成的对话会同步给你。')), box);
+  if (!llmCache) {
+    if (!llmLoading) {
+      llmLoading = true;
+      void llm.get().then((v) => {
+        llmCache = v;
+        llmLoading = false;
+        ctx.ui.refresh();
+      });
+    }
+    return (box.append(h('div', { class: 'muted' }, '读取中……')), box);
+  }
+  const cur = llmCache;
+  const field = (label: string, el: HTMLElement) => h('label', { class: 'row', style: 'gap:8px' }, h('span', { style: 'width:96px' }, label), el);
+  const base = h('input', { type: 'text', value: cur.baseUrl, style: 'width:320px', placeholder: 'https://api.openai.com/v1' }) as HTMLInputElement;
+  const model = h('input', { type: 'text', value: cur.model, style: 'width:200px', placeholder: '模型名' }) as HTMLInputElement;
+  const key = h('input', { type: 'password', value: '', style: 'width:320px', placeholder: cur.hasKey ? '已保存（不显示）；填新的会替换' : 'sk-...', autocomplete: 'off' }) as HTMLInputElement;
+  const limit = h('input', { type: 'number', value: String(cur.dailyLimit), min: '1', max: '1000', style: 'width:90px' }) as HTMLInputElement;
+  const save = async (extra: Record<string, unknown> = {}) => {
+    const r = await llm.set({ baseUrl: base.value, model: model.value, dailyLimit: Number(limit.value), ...(key.value.trim() ? { apiKey: key.value } : {}), ...extra });
+    key.value = '';
+    if (!r.ok) ctx.ui.toast(r.error ?? '保存失败', 'error');
+    llmCache = await llm.get();
+    await ctx.spirit.sync();
+    ctx.ui.refresh();
+    return r.ok;
+  };
+  const stats = ctx.spirit.stats();
+  box.append(
+    h('div', { class: 'muted' }, '填上兼容 OpenAI Chat Completions 的服务地址、模型和 key，守岛人会用它来想今天做什么、和你说话。key 用系统加密存在这台电脑上，只发往你填的地址；不会进存档，也不会发给联机的客人。调用产生的费用由你的服务商收取。'),
+    field('服务地址', base),
+    field('模型', model),
+    field('API key', key),
+    field('每天上限', h('span', { class: 'row' }, limit, h('span', { class: 'muted' }, '次 / 游戏日（超出后用对话库）'))),
+    h(
+      'div',
+      { class: 'row' },
+      button(cur.enabled ? '关闭灵性模式' : '打开灵性模式', () => void save({ enabled: !cur.enabled }).then((ok) => ok && ctx.ui.toast(cur.enabled ? '已关闭：守岛人回到对话库' : '已打开灵性模式')), { class: cur.enabled ? '' : 'primary' }),
+      button('保存', () => void save().then((ok) => ok && ctx.ui.toast('已保存'))),
+      button('测试连接', async () => {
+        if (!(await save())) return;
+        const r = await llm.test();
+        ctx.ui.toast(r.ok ? '连接成功' : `连接失败：${r.error}`, r.ok ? undefined : 'error');
+      }),
+      cur.hasKey ? button('删除 key', () => void save({ apiKey: null, enabled: false }).then(() => ctx.ui.toast('key 已删除'))) : null,
+    ),
+    h('div', { class: 'muted' }, `状态：${cur.enabled && cur.hasKey ? (ctx.world().aiMode === 'spirit' ? '灵性模式运行中' : '正在切换……') : cur.enabled ? '还没填 key，守岛人用对话库' : '关闭（守岛人用对话库）'}${stats ? ` · 本次游戏调用 ${stats.calls} 次，回退 ${stats.fallbacks} 次${stats.lastError ? `，最近一次问题：${stats.lastError}` : ''}` : ''}`),
+  );
+  if (!cur.encryption) box.append(h('div', { class: 'muted' }, '注意：这台电脑不支持系统加密，不能保存 key。'));
+  return box;
 }
 
 // =================================================================== 建筑

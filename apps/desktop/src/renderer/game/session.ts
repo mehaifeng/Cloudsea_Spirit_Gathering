@@ -12,6 +12,8 @@ import {
   type WorldEvent,
   type WorldState,
 } from '@cloudsea/sim';
+import { SpiritDirector } from '@cloudsea/ai';
+import { llmBridge } from './spirit';
 import { ipcHostTransport, muxHost, netBridge, SwitchableHost } from './netTransports';
 import { saveBackend } from './saves';
 
@@ -81,6 +83,8 @@ export class GameSession {
   /** 房主开放的局域网地址（开放后才有）。 */
   lan: { port: number; addresses: string[] } | null = null;
   steamLobby: string | null = null;
+  /** 灵性模式（M3-4）：只有房主用自己的 key 生成，结果作为意图进 sim、同步给客人。 */
+  readonly spirit: SpiritDirector | null = null;
 
   private constructor(
     readonly slot: string,
@@ -93,6 +97,11 @@ export class GameSession {
       this.host = new HostSession(this.content, world, muxHost(hub.host, this.remote), (events) => this.onHostEvents(events));
       setLocalPlayer(world.hostId);
       this.client = new ClientSession(hub.connect('local'), { playerId: world.hostId });
+      const llm = llmBridge();
+      if (llm) {
+        this.spirit = new SpiritDirector(this.content, llm.chat, () => world, (intent) => this.client.request(intent));
+        void this.syncAiMode();
+      }
     } else {
       this.role = 'guest';
       this.host = null;
@@ -188,7 +197,17 @@ export class GameSession {
     if (this.sinceSave >= AUTOSAVE_MS) void this.save();
   }
 
+  /** 房主：按本机设置切换世界的守岛人模式（打开且填了 key 才是灵性模式）。 */
+  async syncAiMode(): Promise<void> {
+    const llm = llmBridge();
+    if (!llm || !this.world) return;
+    const s = await llm.get().catch(() => null);
+    const mode = s?.enabled && s.hasKey ? 'spirit' : 'default';
+    if (this.world.aiMode !== mode) await this.client.request({ type: 'setAiMode', mode });
+  }
+
   private onHostEvents(events: readonly WorldEvent[]): void {
+    if (this.spirit && events.some((e) => e.t === 'keeperTalkRequest' || e.t === 'keeperPlanRequest' || e.t === 'keeperSummaryRequest')) void this.spirit.handle(events);
     // 每个游戏日开始时自动存档（DESIGN 9.4）
     if (events.some((e) => e.t === 'dayStart') && (this.world?.tick ?? 0) > 100) void this.save();
   }

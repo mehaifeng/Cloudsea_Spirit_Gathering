@@ -29,6 +29,8 @@ import { Hud } from './hud';
 import { Input } from './input';
 import { openBuilding, openCore, openDock, openKeeper, openMenu, openSpirit, openStarChart, type Ctx } from './panels';
 import { saveBackend } from './saves';
+import { loadBlockedLines, rememberBlocked } from './spirit';
+import { isBlocked } from '@cloudsea/ai';
 import { characterStore, GameSession, newCharacterId, PLAYER_ID } from './session';
 import { ipcClientTransport, netBridge } from './netTransports';
 import { itemName } from './text';
@@ -162,7 +164,12 @@ export class App {
         steamLobby: () => this.session?.steamLobby ?? null,
         leave: () => void this.leaveAsGuest(),
       },
+      spirit: {
+        stats: () => (this.session?.spirit ? { calls: this.session.spirit.calls, fallbacks: this.session.spirit.fallbacks, lastError: this.session.spirit.lastError } : null),
+        sync: () => this.session?.syncAiMode() ?? Promise.resolve(),
+      },
     };
+    loadBlockedLines();
     this.hud.onPartyClick = (id) => {
       if (this.mode === 'explore' && !this.ui.capturing) openSpirit(this.ctx, id);
     };
@@ -725,9 +732,18 @@ export class App {
           this.pendingEnd = e;
           if (c && !c.tutorial.done && c.tutorial.step === 2) void this.act({ type: 'tutorial', step: 3 });
           break;
-        case 'dialogue':
-          this.ui.say(this.content.keepers.get(e.keeperId)?.name ?? '', e.lines, e.title);
+        case 'dialogue': {
+          const name = this.content.keepers.get(e.keeperId)?.name ?? '';
+          if (e.generated) {
+            // 客人端显示前再过滤一次（DESIGN 11.6）；被屏蔽的换成省略号
+            const lines = e.lines.map((l) => (isBlocked(l) ? '……' : l));
+            this.ui.say(name, lines, e.title, undefined, { onBlock: (line) => {
+              rememberBlocked(line);
+              this.ui.toast('已屏蔽这句话，以后不会再显示');
+            } });
+          } else this.ui.say(name, e.lines, e.title);
           break;
+        }
         case 'affinity':
           if (e.delta !== 0) this.ui.toast(`${this.content.keepers.get(e.keeperId)?.name} 好感 ${e.delta > 0 ? '+' : ''}${e.delta}`);
           break;
