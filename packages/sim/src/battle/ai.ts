@@ -119,20 +119,23 @@ function extraGuardPenalty(acc: Candidate[]): number {
 }
 
 /**
- * 集火溢出：同一目标的预计伤害超过其剩余生命的部分不算收益。
+ * 集火溢出：同一目标的伤害超过其剩余生命的部分不算收益。
+ * 罚的是“这一招自报的收益 − 它在前面队友出手之后实际还能带来的收益”，所以最多把这一招的收益扣到 0；
  * 只罚溢出、不罚集火本身——分散伤害会让治疗型对手永远打不死。
+ * （M3-6 修正：原来按溢出量 / 最大生命罚、没有上限，高等级打低等级时每一招都是负分，AI 只会防御。）
  */
 function overkillPenalty(acc: Candidate[]): number {
   const dealt = new Map<string, number>();
   let penalty = 0;
   for (const c of acc) {
     if (!c.damage) continue;
-    const before = dealt.get(c.damage.uid) ?? 0;
-    const after = before + c.damage.amount;
-    const wasted = Math.max(0, after - Math.max(c.damage.hp, before));
-    penalty += Math.min(wasted, c.damage.amount) / c.damage.maxHp;
-    if (before < c.damage.hp && after >= c.damage.hp && before > 0) penalty += 0.5; // 击倒奖励只算一次
-    dealt.set(c.damage.uid, after);
+    const { uid, amount, hp, maxHp } = c.damage;
+    const before = dealt.get(uid) ?? 0;
+    const claimed = Math.min(amount, hp) / maxHp + (amount >= hp ? 0.5 : 0);
+    const remaining = Math.max(0, hp - before);
+    const effective = Math.min(amount, remaining) / maxHp + (remaining > 0 && amount >= remaining ? 0.5 : 0);
+    penalty += claimed - effective;
+    dealt.set(uid, before + amount);
   }
   return penalty;
 }

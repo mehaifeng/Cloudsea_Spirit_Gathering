@@ -78,10 +78,10 @@ describe('内置内容', () => {
     expect(inSun('hazepuff').every((s) => (s.minFogLevel ?? 0) >= 2)).toBe(true);
   });
 
-  it('种族值总和：三段线 250 / 350 / 450；两段线 250 / 390（苔蝾成体 365：30 级就进化，按 battle-sim 下调）', () => {
+  it('种族值总和：三段线 250 / 350 / 450；两段线 250 / 390（苔蝾成体 375：30 级就进化，按 battle-sim 下调；M3-6 战斗 AI 修正后 365 → 375）', () => {
     for (const line of db.lines.values()) {
       const expected = line.forms.length === 3 ? [250, 350, 450] : [250, 390];
-      line.forms.forEach((form, i) => expect(STATS.reduce((sum, s) => sum + form.baseStats[s], 0), form.id).toBe(line.id === 'mossnewt' && i === 1 ? 365 : expected[i]));
+      line.forms.forEach((form, i) => expect(STATS.reduce((sum, s) => sum + form.baseStats[s], 0), form.id).toBe(line.id === 'mossnewt' && i === 1 ? 375 : expected[i]));
     }
   });
 

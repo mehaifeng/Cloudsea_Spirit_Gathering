@@ -63,3 +63,17 @@ describe('战斗 AI', () => {
     expect(wins / N).toBeGreaterThan(0.6);
   });
 });
+
+describe('AI 不会因为“溢出”而不出手（M3-6 回归）', () => {
+  it('高等级打 2 级的野生絮灵：至少有一只出攻击招', () => {
+    const content = getContent();
+    const strong = ['warmbud', 'warmbud', 'kitefluff'].map((l, i) => makeSpirit(content, l, 25, { id: `s${i}`, formIndex: 1 }));
+    const weak = [makeSpirit(content, 'warmbud', 2, { id: 'w' })];
+    const state = createBattle(content, { kind: 'wild', sides: [{ spirits: strong }, { spirits: weak }], baseWeather: 'sun', seed: 4 });
+    for (const depth of [0, 1] as const) {
+      const a = chooseActions(content, state, 0, { depth, mistakeRate: 0, seed: 1 });
+      const attacks = Object.values(a).filter((x) => x.type === 'skill' && (content.skills.get(x.skillId)?.power ?? 0) > 0);
+      expect(attacks.length, `depth ${depth}`).toBeGreaterThanOrEqual(1);
+    }
+  });
+});

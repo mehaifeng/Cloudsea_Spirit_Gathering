@@ -436,7 +436,7 @@ export const LINES: readonly LineInput[] = [
     forms: [
       { id: 'mossnewt', no: 28, name: '苔蝾', stage: 'hatchling', baseStats: { hp: 50, power: 48, guard: 50, agility: 45, resonance: 57 }, skeleton: { bodyRadius: 0.3, headRatio: 0.9, eyeScale: 1.1, tailSegments: 5 }, evolution: { level: 30, weather: 'rain' },
         memoryShard: { title: '井边', text: '老井的石头缝里长着青苔，凉丝丝的。打水的时候，桶会碰到井壁，咚的一声。' } },
-      { id: 'bogdrake', no: 29, name: '沼蝾', stage: 'adult', baseStats: { hp: 70, power: 78, guard: 70, agility: 72, resonance: 75 }, skeleton: { bodyRadius: 0.5, headRatio: 0.78, eyeScale: 0.9, tailSegments: 6 },
+      { id: 'bogdrake', no: 29, name: '沼蝾', stage: 'adult', baseStats: { hp: 75, power: 78, guard: 70, agility: 72, resonance: 80 }, skeleton: { bodyRadius: 0.5, headRatio: 0.78, eyeScale: 0.9, tailSegments: 6 },
         memoryShard: { title: '老桥', text: '石桥上的青苔被人踩出一条小路。桥下的水很慢，倒影里的人也走得很慢。' } },
     ],
   },
