@@ -28,6 +28,13 @@ contextBridge.exposeInMainWorld('cloudsea', {
       return () => ipcRenderer.removeListener(channel, fn);
     },
   },
+  /** 灵性模式（M3-4）：key 只能写进去、读不出来。 */
+  llm: {
+    get: () => ipcRenderer.invoke('llm:get'),
+    set: (patch: unknown) => ipcRenderer.invoke('llm:set', patch),
+    test: () => ipcRenderer.invoke('llm:test'),
+    chat: (req: unknown) => ipcRenderer.invoke('llm:chat', req),
+  },
   characters: {
     list: () => ipcRenderer.invoke('characters:list'),
     write: (id: string, data: string) => ipcRenderer.invoke('characters:write', id, data),

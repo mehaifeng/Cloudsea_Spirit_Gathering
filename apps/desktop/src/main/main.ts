@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell } from 'electron';
 import { join } from 'node:path';
+import { registerLlmIpc } from './llm';
 import { registerNetIpc } from './net';
 import { registerSaveIpc } from './saves';
 
@@ -64,6 +65,7 @@ function createWindow(): void {
 void app.whenReady().then(() => {
   registerSaveIpc();
   registerNetIpc(() => mainWindow);
+  registerLlmIpc();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
