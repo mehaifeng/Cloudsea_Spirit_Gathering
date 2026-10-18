@@ -21,7 +21,7 @@ DESIGN.md 中标〔补〕的条目是 Claude 按设计精神补的细节，视�
 - 测试：Vitest
 - 包管理：pnpm workspaces
 
-## 目录结构（计划；已建：sim、content、render、net、ai、ui、apps/desktop、tools/battle-sim、tools/campaign）
+## 目录结构（计划；已建：sim、content、render、net、ai、i18n、ui、apps/desktop、tools/battle-sim、tools/campaign）
 ```
 packages/
   sim/        纯游戏逻辑：战斗（含战斗搜索 AI）、繁殖、经济、世界状态（星图 + 活跃岛实例）、存档迁移。无渲染、无 IO、无 DOM
@@ -29,6 +29,7 @@ packages/
   render/     Three.js 表现层：岛屿生成、絮灵与角色建模、骨骼动画、特效
   net/        传输抽象：Loopback（单人）、SteamP2P、WebSocket（局域网 / 开发调试）
   ai/         守岛人规划器（加权随机 / LLM）、LLM 客户端（Chat Completions）、对话库检索、守岛人岛抽象模拟
+  i18n/       中 / 英本地化：中文原文即键，英文表与键集检查
   ui/         HUD、菜单、图鉴、SVG 图标
 apps/
   desktop/    Electron 主进程：Steam、存档读写、key 加密存储、LLM 请求
@@ -60,7 +61,7 @@ prototype/      M0 单文件原型，只作参考，不再修改
 - 属性色固定：晴 #F3B94D、雨 #5AA9E6、风 #5CC8A0、雷 #A77BE8、雾 #B8BFD6。
 
 ## 代码约定
-- 代码标识符用英文；游戏内文本、数据表的显示名用中文，并预留英文本地化键。
+- 代码标识符用英文；游戏内文本、数据表的显示名用中文。中文原文就是本地化键（packages/i18n），改了玩家能看到的中文要同步英文表（`pnpm test` 会检查）。
 - 术语对照（代码中统一使用）：
   - 絮灵 = `spirit`，物种 = `species`，零件 = `part`，资质 = `talent`，性格 = `nature`
   - 天象属性 = `element`：`sun` 晴 / `rain` 雨 / `wind` 风 / `thunder` 雷 / `mist` 雾

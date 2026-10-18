@@ -124,7 +124,7 @@ export const ISLANDS: readonly IslandInput[] = [
     blightChance: 0,
     gather: [{ kind: 'rock', count: 4 }],
     cloudlord: 'sunPlainsLord',
-    description: '熄灭的灯塔立在台地顶上，塔下盘踞着被蚀雾吞没的曦冕。（M2：可以几个人一起讨伐）',
+    description: '熄灭的灯塔立在台地顶上，塔下盘踞着被蚀雾吞没的曦冕。好几个人可以一起讨伐它。',
   },
   // ======================== M3-2：晴原补 2 座 + 风谷 / 雨泽 / 雷崖 / 雾海 ========================
   {

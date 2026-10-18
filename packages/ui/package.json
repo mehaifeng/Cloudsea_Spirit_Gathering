@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@cloudsea/content": "workspace:*"
+    "@cloudsea/content": "workspace:*",
+    "@cloudsea/i18n": "workspace:*"
   }
 }

@@ -133,8 +133,8 @@ export function giftKeeper(content: ContentDb, world: WorldState, keeperId: stri
   return null;
 }
 
-/** LLM 生成的一句话的长度上限（DESIGN 11.6）。 */
-export const LLM_LINE_MAX = 120;
+/** LLM 生成的一句话的长度上限：中文 120 字（DESIGN 11.6）；英文按 200 个字符放宽（M4-3）。 */
+export const LLM_LINE_MAX = 200;
 
 /** 灵性模式等 LLM 的时限（tick）：超时就用默认模式的结果（DESIGN 11.5，M3-4）。 */
 export const SPIRIT_WAIT_TICKS = 200;

@@ -18,7 +18,9 @@ import {
   type WorldState,
 } from '@cloudsea/sim';
 import { buildIslandMesh, CreatureView, Environment, lookFromSpirit, makeBuildingView } from '@cloudsea/render';
+import { tr } from '@cloudsea/i18n';
 import { button, focusFirst, h } from '@cloudsea/ui';
+import { languageRow } from './panels';
 import * as THREE from 'three';
 import { battleUnitSpirit, BattleView } from './battle';
 import { Cutscene, type Shot } from './cinematic';
@@ -224,6 +226,7 @@ export class App {
       ),
     );
     panel.append(button('加入联机', () => void this.showJoin(panel, name.value)));
+    panel.append(languageRow());
     this.titleEl = h('div', { id: 'title' }, h('h1', {}, '云海拾灵'), h('div', { class: 'sub' }, 'Cloudsea: Spirit Gathering · M2 联机预览'), panel);
     this.ui.layer.append(this.titleEl);
     focusFirst(panel);
@@ -283,14 +286,14 @@ export class App {
     renderList();
     const status = h('div', { class: 'muted', id: 'join-status' }, '房主在菜单 → 联机 里开放局域网后，把地址告诉你。');
     const go = async () => {
-      status.textContent = '连接中……';
+      status.textContent = tr('连接中……');
       const url = addr.value.includes('://') ? addr.value : `ws://${addr.value.includes(':') ? addr.value : `${addr.value}:47621`}`;
       const r = await net.joinLan(url);
       if (!r.ok) {
-        status.textContent = r.error ?? '连不上';
+        status.textContent = tr(r.error ?? '连不上');
         return;
       }
-      await this.joinWith(ipcClientTransport(net), pick ? chars.find((c) => c.id === pick)!.data : null, name.value, (msg) => (status.textContent = msg));
+      await this.joinWith(ipcClientTransport(net), pick ? chars.find((c) => c.id === pick)!.data : null, name.value, (msg) => (status.textContent = tr(msg)));
     };
     panel.replaceChildren(
       h('b', {}, '加入联机'),

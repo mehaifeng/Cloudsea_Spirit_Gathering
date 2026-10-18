@@ -1,3 +1,4 @@
+import { tr } from '@cloudsea/i18n';
 import { AILMENT_INFO, ELEMENT_INFO, STAGE_STATS, type ContentDb, type Element } from '@cloudsea/content';
 import {
   activeUnits,
@@ -403,7 +404,7 @@ export class BattleView {
       'div',
       {},
       h('div', { class: 'row', style: 'gap:6px' }, elementIcon(el, 16), h('b', {}, sk.name), h('span', { class: 'badge' }, CATEGORY[sk.category]?.label ?? ''), h('span', { class: 'muted' }, ELEMENT_INFO[el].name)),
-      h('div', { class: 'muted', style: 'font-size:14px' }, facts.join(' · ')),
+      h('div', { class: 'muted', style: 'font-size:14px' }, facts.map((f) => tr(f as string)).join(' · ')),
       h('div', {}, sk.description),
       can ? null : h('div', { class: 'warn-text' }, '云气不够'),
     );

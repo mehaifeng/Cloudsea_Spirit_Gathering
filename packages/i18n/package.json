@@ -1,0 +1,17 @@
+{
+  "name": "@cloudsea/i18n",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "中 / 英本地化（M4-3）：中文原文即键，模板按占位符匹配",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "extract": "tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "tsx": "4.23.15"
+  }
+}

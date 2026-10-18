@@ -21,9 +21,9 @@ const planSchema = z.object({ goal: z.enum(PLANNER_GOALS), note: z.string().opti
 const summarySchema = z.object({ summary: z.string() });
 
 /** 守岛人说的一句话；不合格 = null。 */
-export function parseTalk(content: string): string | null {
+export function parseTalk(content: string, max = 120): string | null {
   const r = talkSchema.safeParse(extractJson(content));
-  return r.success ? cleanLine(r.data.text, 120) : null;
+  return r.success ? cleanLine(r.data.text, max) : null;
 }
 
 /** 今天的目标（只能是白名单里的，DESIGN 11.4）与一句打算。 */

@@ -60,7 +60,13 @@ function persona(k: Keeper): string {
   ].join('\n');
 }
 
+/** 界面是英文时，让守岛人用英文说话（M4-3）。名字、地名按游戏里的英文名。 */
+export function languageRule(lang: 'zh' | 'en'): string[] {
+  return lang === 'en' ? ['The player plays in English: write every text field in natural, warm English (keep names as they are). One spoken sentence, at most 25 words.'] : [];
+}
+
 export interface TalkContext {
+  readonly lang?: 'zh' | 'en';
   readonly keeper: Keeper;
   readonly situation: string;
   readonly affinityLevel: number;
@@ -77,7 +83,7 @@ export function talkMessages(c: TalkContext): ChatMessage[] {
   return [
     {
       role: 'system',
-      content: [...WORLD_RULES, persona(c.keeper), '只输出一个 JSON 对象：{"text":"你说的一句话"}。text 是一句口语，不超过 60 个字，不要动作描写，不要引号以外的格式。'].join('\n\n'),
+      content: [...WORLD_RULES, persona(c.keeper), '只输出一个 JSON 对象：{"text":"你说的一句话"}。text 是一句口语，不超过 60 个字，不要动作描写，不要引号以外的格式。', ...languageRule(c.lang ?? 'zh')].join('\n\n'),
     },
     {
       role: 'user',
@@ -96,6 +102,7 @@ export function talkMessages(c: TalkContext): ChatMessage[] {
 }
 
 export interface PlanContext {
+  readonly lang?: 'zh' | 'en';
   readonly keeper: Keeper;
   readonly day: number;
   readonly weather: string;
@@ -114,6 +121,7 @@ export function planMessages(c: PlanContext): ChatMessage[] {
         persona(c.keeper),
         `为今天选一件事。只能从这些里选：${c.allowed.map((g) => `${g}（${GOAL_TEXT[g]}）`).join('、')}。`,
         '只输出一个 JSON 对象：{"goal":"英文代号","note":"用第一人称写一句今天的打算，不超过 30 字"}。',
+        ...languageRule(c.lang ?? 'zh'),
       ].join('\n\n'),
     },
     { role: 'user', content: JSON.stringify({ 第几天: c.day, 天气: c.weather, 长期记忆: c.summary.slice(0, 300), 最近的事: c.memory.slice(-10) }) },

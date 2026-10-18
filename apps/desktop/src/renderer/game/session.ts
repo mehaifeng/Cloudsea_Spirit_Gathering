@@ -13,6 +13,7 @@ import {
   type WorldState,
 } from '@cloudsea/sim';
 import { SpiritDirector } from '@cloudsea/ai';
+import { getLanguage } from '@cloudsea/i18n';
 import { llmBridge } from './spirit';
 import { ipcHostTransport, muxHost, netBridge, SwitchableHost } from './netTransports';
 import { saveBackend } from './saves';
@@ -99,7 +100,7 @@ export class GameSession {
       this.client = new ClientSession(hub.connect('local'), { playerId: world.hostId });
       const llm = llmBridge();
       if (llm) {
-        this.spirit = new SpiritDirector(this.content, llm.chat, () => world, (intent) => this.client.request(intent));
+        this.spirit = new SpiritDirector(this.content, llm.chat, () => world, (intent) => this.client.request(intent), getLanguage);
         void this.syncAiMode();
       }
     } else {

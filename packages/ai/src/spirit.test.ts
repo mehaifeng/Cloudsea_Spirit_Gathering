@@ -80,7 +80,7 @@ describe('灵性模式（M3-4）', () => {
     applyIntent(content, w, 'g1', { type: 'talk', keeperId: 'aHe' });
     expect(applyIntent(content, w, 'g1', { type: 'keeperSay', keeperId: 'aHe', playerId: 'g1', text: '冒充', generated: true }).error).toMatch(/房主/);
     expect(applyIntent(content, w, 'g1', { type: 'setAiMode', mode: 'default' }).error).toMatch(/房主/);
-    expect(applyIntent(content, w, 'p1', { type: 'keeperSay', keeperId: 'aHe', playerId: 'g1', text: '长'.repeat(121), generated: true }).ok).toBe(false);
+    expect(applyIntent(content, w, 'p1', { type: 'keeperSay', keeperId: 'aHe', playerId: 'g1', text: '长'.repeat(201), generated: true }).ok).toBe(false);
   });
 
   it('每日计划：LLM 只能选今天允许的目标；选了不允许的就等超时用默认规划', async () => {

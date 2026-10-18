@@ -12,6 +12,17 @@ const VERSION = 1;
 const MAX_TEAM = 6;
 const B = { version: 4, count: 3, skillCount: 3, skill: 7, checksum: 16 } as const;
 
+/** 絮灵字段的错误换成队伍码的说法（写成字面量，本地化能抽到，M4-3）。 */
+const TEAM_ERRORS: Readonly<Record<string, string>> = {
+  絮灵码里的物种不存在: '队伍码里的物种不存在',
+  絮灵码里的等级无效: '队伍码里的等级无效',
+  絮灵码里的属性无效: '队伍码里的属性无效',
+  絮灵码里的外观或性格无效: '队伍码里的外观或性格无效',
+  絮灵码里的零件不存在: '队伍码里的零件不存在',
+  絮灵码里的零件槽位不对: '队伍码里的零件槽位不对',
+  絮灵码里的异化标记无效: '队伍码里的异化标记无效',
+};
+
 export interface TeamMember extends SpiritCodeData {
   readonly skills: readonly string[];
 }
@@ -59,7 +70,7 @@ export function decodeTeamCode(content: ContentDb, code: string): TeamMember[] |
   const out: TeamMember[] = [];
   for (let i = 0; i < count; i++) {
     const data = readSpiritFields(r, content);
-    if (typeof data === 'string') return data.replace('絮灵码', '队伍码');
+    if (typeof data === 'string') return TEAM_ERRORS[data] ?? '队伍码里有无效的絮灵';
     const n = r.read(B.skillCount);
     if (n > MAX_SKILL_SLOTS) return '队伍码里的技能数不对';
     const skills: string[] = [];

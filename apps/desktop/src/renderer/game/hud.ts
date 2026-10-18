@@ -1,5 +1,6 @@
 import { ELEMENT_INFO, type ContentDb } from '@cloudsea/content';
 import { clockAt, currentHp, effectiveFog, formatClock, homeIslandId, maxHpOf, weatherAt, type WorldState } from '@cloudsea/sim';
+import { tr } from '@cloudsea/i18n';
 import { clear, elementIcon, h, icon } from '@cloudsea/ui';
 import type { Interactable } from './explore';
 import { PLAYER_ID } from './session';
@@ -92,7 +93,7 @@ export class Hud {
           this.ui.partyBar.append(badge);
         }
       }
-      this.ui.hints.textContent = this.pad
+      this.ui.hints.textContent = tr(this.pad
         ? mode === 'battle'
           ? '十字键选择 · Ⓐ 确认 · Ⓑ 返回'
           : '左摇杆 移动（推到底跑） · 右摇杆 转视角 · LT/RT 远近 · Ⓐ 交互 · Ⓧ 跳 · Ⓨ 菜单 · Select 星图'
@@ -100,7 +101,7 @@ export class Hud {
           ? '鼠标选位置 · 点击放置 · R 旋转 · Esc / 右键退出'
           : mode === 'battle'
             ? '方向键选择 · Enter 确认 · Esc 返回'
-            : `WASD 移动 · Shift 跑 · 空格 跳 · 拖动转视角 · E 交互 · Tab 菜单${p.islandId === homeIslandId(PLAYER_ID) ? ' · B 建造' : ''} · M 星图`;
+            : `WASD 移动 · Shift 跑 · 空格 跳 · 拖动转视角 · E 交互 · Tab 菜单${p.islandId === homeIslandId(PLAYER_ID) ? ' · B 建造' : ''} · M 星图`);
       this.ui.hints.classList.toggle('hidden', false);
     }
     const prompt = mode === 'explore' && nearest ? nearest.label : '';

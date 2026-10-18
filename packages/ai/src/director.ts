@@ -21,6 +21,8 @@ export class SpiritDirector {
     private readonly chat: ChatFn,
     private readonly world: () => Readonly<WorldState>,
     private readonly send: (intent: Intent) => Promise<unknown>,
+    /** 房主的界面语言（M4-3）：决定守岛人用中文还是英文说话。 */
+    private readonly lang: () => 'zh' | 'en' = () => 'zh',
   ) {}
 
   /** 处理一批世界事件（等所有请求都有结果）。 */
@@ -52,6 +54,7 @@ export class SpiritDirector {
     const examples = this.content.dialogue.filter((d) => d.keeper === def.id && d.situation === e.situation && (d.minAffinity ?? 0) <= e.level && e.level <= (d.maxAffinity ?? 5));
     const reply = await this.ask(
       talkMessages({
+        lang: this.lang(),
         keeper: def,
         situation: e.situation,
         affinityLevel: e.level,
@@ -64,7 +67,7 @@ export class SpiritDirector {
       }),
       160,
     );
-    const text = reply === null ? null : parseTalk(reply);
+    const text = reply === null ? null : parseTalk(reply, this.lang() === 'en' ? 200 : 120);
     if (text === null) {
       this.fallbacks++;
       if (reply !== null) this.lastError = '回复不合格，用了对话库';
@@ -79,7 +82,7 @@ export class SpiritDirector {
     if (!k || !def) return;
     const weights = goalWeights(this.content, w as WorldState, k);
     const allowed = PLANNER_GOALS.filter((_, i) => weights[i]! > 0);
-    const reply = await this.ask(planMessages({ keeper: def, day: dayOf(w.tick), weather: ELEMENT_INFO[weatherAt(w.seed, def.region, w.tick)].name, allowed, memory: k.memory, summary: k.summary }), 120);
+    const reply = await this.ask(planMessages({ lang: this.lang(), keeper: def, day: dayOf(w.tick), weather: ELEMENT_INFO[weatherAt(w.seed, def.region, w.tick)].name, allowed, memory: k.memory, summary: k.summary }), 120);
     const plan = reply === null ? null : parsePlan(reply);
     if (!plan || !allowed.includes(plan.goal)) {
       this.fallbacks++;

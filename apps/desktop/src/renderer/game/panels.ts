@@ -57,6 +57,7 @@ import {
   type Spirit,
   type WorldState,
 } from '@cloudsea/sim';
+import { getLanguage, LANGS, tr } from '@cloudsea/i18n';
 import { button, elementBadge, elementIcon, h, icon } from '@cloudsea/ui';
 import { PLAYER_ID } from './session';
 import { llmBridge, type LlmPublicSettings } from './spirit';
@@ -435,6 +436,8 @@ function settingsTab(ctx: Ctx): HTMLElement {
     h('h3', {}, '导入絮灵码'),
     h('div', { class: 'row' }, input, button('导入', () => void doAndRefresh(ctx, { type: 'importSpirit', code: input.value }, '外来絮灵来到了你的家园（不能繁殖、不能参加剧情战斗）'))),
     spiritSection(ctx),
+    h('h3', {}, '语言 / Language'),
+    languageRow(() => ctx.saveNow()),
     h('h3', {}, '离开'),
     h('div', { class: 'row' }, button('存档并回到标题', () => void ctx.saveNow().then(() => ctx.quitToTitle()))),
   );
@@ -512,6 +515,30 @@ function shareTab(ctx: Ctx): HTMLElement {
         if (await ctx.act({ type: 'teamChallenge', code: teamIn.value })) ctx.ui.closeAllModals();
       }, { class: 'primary', disabled: !atHomeNow }),
       h('span', { class: 'muted' }, atHomeNow ? '对手由战斗 AI 操控；友谊战，不得经验和云贝，伤势也不会带出来。' : '回到家园岛才能挑战。'),
+    ),
+  );
+}
+
+/** 语言切换（M4-3）：记在本机，存档后重新载入界面（回到标题）。 */
+export function languageRow(beforeReload?: () => Promise<void>): HTMLElement {
+  const cur = getLanguage();
+  return h(
+    'div',
+    { class: 'row' },
+    ...LANGS.map((l) =>
+      button(l.name, async () => {
+        if (l.id === cur) return;
+        await beforeReload?.();
+        try {
+          localStorage.setItem('cloudsea.lang', l.id);
+        } catch {
+          /* 存不下就只切这一次 */
+        }
+        const qs = new URLSearchParams(location.search);
+        qs.set('lang', l.id);
+        qs.delete('scene');
+        location.search = qs.toString();
+      }, { class: l.id === cur ? 'selected small' : 'small' }),
     ),
   );
 }
@@ -712,18 +739,18 @@ function breedingSection(ctx: Ctx, b: BuildingInstance): HTMLElement {
   }, { class: 'primary', disabled: true });
   const update = () => {
     if (sel.length < 2) {
-      status.textContent = `选一雄一雌两只絮灵：同物种，或主属性相生的不同物种（共鸣繁殖）（已选 ${sel.length}）`;
+      status.textContent = tr(`选一雄一雌两只絮灵：同物种，或主属性相生的不同物种（共鸣繁殖）（已选 ${sel.length}）`);
       go.setAttribute('aria-disabled', 'true');
       return;
     }
     const [sa, sb] = [c.spirits[sel[0]!]!, c.spirits[sel[1]!]!];
     const why = breedBlocker(ctx.content, sa, sb, w.tick);
     const mother = sa.genes.sex === 'female' ? sa : sb;
-    status.textContent =
+    status.textContent = tr(
       why ??
       (sa.genes.lineId !== sb.genes.lineId
         ? `可以共鸣繁殖：后代是${ctx.content.lines.get(mother.genes.lineId)!.name.replace(/线$/, '')}（随母方），零件更容易突变，偶尔会带上双属性。`
-        : '可以繁殖。后代会遗传双亲的零件、资质与配色。');
+        : '可以繁殖。后代会遗传双亲的零件、资质与配色。'));
     if (why) go.setAttribute('aria-disabled', 'true');
     else go.removeAttribute('aria-disabled');
   };
@@ -871,7 +898,7 @@ export function openStarChart(ctx: Ctx): void {
       ...REGIONS.map((r) => {
         const open = regionUnlocked(ctx.content, w, r);
         const done = lighthouseLit(ctx.content, w, r);
-        return button([h('span', {}, `${REGION_NAME[r]}${done ? ' ✦' : open ? '' : ' · 浓雾'}`)], () => ((chartRegion = r), ctx.ui.refresh(true)), { class: `${r === region ? 'selected' : ''} small`, title: open ? '' : '先点亮上一座灯塔' });
+        return button([h('span', {}, REGION_NAME[r], done ? ' ✦' : open ? '' : ' · 浓雾')], () => ((chartRegion = r), ctx.ui.refresh(true)), { class: `${r === region ? 'selected' : ''} small`, title: open ? '' : '先点亮上一座灯塔' });
       }),
     );
     const isles = [...ctx.content.islands.values()].filter((i) => i.region === region && islandPresent(w, i));
@@ -918,7 +945,7 @@ export function openStarChart(ctx: Ctx): void {
       `星图 · 第 ${chapterOf(w)} 章`,
       ctx,
       tabs,
-      h('div', { class: 'muted' }, `${REGION_NAME[region]}天气预报：${fc.join(' → ')}。${lit ? '这里的灯塔已经重燃，雾散了，出航不用燃料。' : '有雾的岛需要提灯燃料，雾浓度高于提灯等级就进不去。'}`),
+      h('div', { class: 'muted' }, `${REGION_NAME[region]}天气预报：${fc.map((f) => tr(f)).join(' → ')}。${lit ? '这里的灯塔已经重燃，雾散了，出航不用燃料。' : '有雾的岛需要提灯燃料，雾浓度高于提灯等级就进不去。'}`),
       chart,
     );
   });

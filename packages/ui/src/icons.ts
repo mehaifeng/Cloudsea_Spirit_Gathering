@@ -1,3 +1,4 @@
+import { tr } from '@cloudsea/i18n';
 import { ELEMENT_INFO, type Element } from '@cloudsea/content';
 import { svg } from './dom';
 
@@ -27,7 +28,7 @@ export function elementBadge(el: Element): HTMLSpanElement {
   const b = elementIcon(el, 14);
   b.className = 'badge element';
   b.style.setProperty('--c', ELEMENT_INFO[el].color);
-  b.append(ELEMENT_INFO[el].name);
+  b.append(tr(ELEMENT_INFO[el].name));
   return b;
 }
 

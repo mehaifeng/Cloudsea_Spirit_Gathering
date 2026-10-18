@@ -1,3 +1,5 @@
+import { tr } from '@cloudsea/i18n';
+
 type Child = Node | string | number | null | undefined | false;
 type Props = Record<string, unknown> & {
   class?: string;
@@ -22,12 +24,13 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props = 
     } else if (k === 'html') {
       el.innerHTML = String(v);
     } else {
-      el.setAttribute(k, String(v));
+      // 给人看的属性也翻译（M4-3）
+      el.setAttribute(k, k === 'title' || k === 'placeholder' || k === 'aria-label' ? tr(String(v)) : String(v));
     }
   }
   for (const c of children) {
     if (c === null || c === undefined || c === false) continue;
-    el.append(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
+    el.append(typeof c === 'string' ? document.createTextNode(tr(c)) : typeof c === 'number' ? document.createTextNode(String(c)) : c);
   }
   return el;
 }

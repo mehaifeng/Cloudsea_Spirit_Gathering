@@ -48,6 +48,9 @@ function createWindow(): void {
   const query = new URLSearchParams();
   if (testMode) query.set('test', '1');
   if (testMode && scene) query.set('scene', scene);
+  // 测试可以指定界面语言（M4-3）：CLOUDSEA_LANG=en
+  const lang = process.env['CLOUDSEA_LANG'];
+  if (lang === 'zh' || lang === 'en') query.set('lang', lang);
   // 双窗口联机调试：预填加入地址 / 自动开房（scripts/duo.mjs）
   const autoJoin = process.env['CLOUDSEA_AUTOJOIN'];
   if (autoJoin) query.set('join', autoJoin);
