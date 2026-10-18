@@ -21,7 +21,7 @@ DESIGN.md 中标〔补〕的条目是 Claude 按设计精神补的细节，视�
 - 测试：Vitest
 - 包管理：pnpm workspaces
 
-## 目录结构（计划；已建：sim、content、render、net、ai、ui、apps/desktop、tools/battle-sim）
+## 目录结构（计划；已建：sim、content、render、net、ai、ui、apps/desktop、tools/battle-sim、tools/campaign）
 ```
 packages/
   sim/        纯游戏逻辑：战斗（含战斗搜索 AI）、繁殖、经济、世界状态（星图 + 活跃岛实例）、存档迁移。无渲染、无 IO、无 DOM
@@ -35,6 +35,7 @@ apps/
   web-demo/   宣传用网页试玩版（无联机、无 LLM）
 tools/
   battle-sim/   自动对战与平衡统计
+  campaign/     自动通关机器人（只发意图，验证主线可通、给出进度节奏）
   econ-sim/     经济节奏模拟
   species-lab/  物种编辑器：调参数并实时预览骨骼动画
   content-gen/  开发期用 LLM 批量生成对话库（产物需人工审核后入库）
@@ -102,6 +103,7 @@ prototype/      M0 单文件原型，只作参考，不再修改
 - 场景截图自查（v0.6 测试模式）：`pnpm scenes`（每个场景直接启动到某个画面并截图、做断言，几秒一个；`SCENES=swim,dock pnpm scenes` 只跑部分）。场景定义在 `apps/desktop/src/renderer/game/scenarios.ts`；手动看某个场景：`CLOUDSEA_TEST=1 CLOUDSEA_SCENE=swim pnpm dev`
 - 截图冒烟 + 全流程回归 + 双窗口联机回归：`pnpm smoke`（打包后用 Playwright 启动 Electron，按新手引导走一遍核心循环；截图存到 `apps/desktop/screenshots/`，不入库）
 - 平衡模拟：`pnpm --filter @cloudsea/battle-sim start [--matches 200] [--levels 1,10,30,60] [--json]`
+- 自动通关（M3-6）：`pnpm --filter @cloudsea/campaign start [--seed 1] [--days 60]`（只发意图，从新游戏打到终章，打印里程碑）
 - 测试模式：环境变量 `CLOUDSEA_TEST=1` 时存档写临时目录、世界种子固定、页面暴露 `window.__game`（只发意图）
 
 ## 工作方式：Claude 开发，Lynx 验收

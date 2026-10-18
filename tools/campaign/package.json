@@ -1,0 +1,18 @@
+{
+  "name": "@cloudsea/campaign",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "自动通关机器人：从新游戏开始只发意图，一路点亮五座灯塔（M3-6）",
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@cloudsea/content": "workspace:*",
+    "@cloudsea/sim": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "4.23.15"
+  }
+}
