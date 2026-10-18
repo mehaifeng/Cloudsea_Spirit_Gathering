@@ -1,8 +1,8 @@
 {
   "name": "@cloudsea/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
-  "description": "云海拾灵 Electron 桌面壳",
+  "description": "云海拾灵 Cloudsea: Spirit Gathering",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "node scripts/dev.mjs",
@@ -11,9 +11,17 @@
     "start": "electron .",
     "smoke": "pnpm build && playwright test tests/smoke.spec.ts tests/playthrough.spec.ts tests/coop.spec.ts tests/spirit.spec.ts tests/gamepad.spec.ts tests/english.spec.ts",
     "scenes": "pnpm build && playwright test tests/scenes.spec.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.node.json"
+    "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.node.json",
+    "icon": "electron scripts/icon.cjs",
+    "dist:win": "pnpm build && electron-builder --win --x64 --publish never",
+    "dist:dir": "pnpm build && electron-builder --dir --publish never",
+    "store-art": "pnpm build && playwright test tests/store.spec.ts --workers 1"
   },
   "dependencies": {
+    "steamworks.js": "0.4.0",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
     "@cloudsea/ai": "workspace:*",
     "@cloudsea/content": "workspace:*",
     "@cloudsea/i18n": "workspace:*",
@@ -23,16 +31,13 @@
     "@cloudsea/ui": "workspace:*",
     "@fontsource/ma-shan-zheng": "5.3.1",
     "@fontsource/noto-serif-sc": "5.3.0",
-    "steamworks.js": "0.4.0",
-    "three": "0.186.1",
-    "ws": "8.22.0"
-  },
-  "devDependencies": {
     "@playwright/test": "1.64.1",
     "@types/three": "0.186.0",
     "@types/ws": "^8.18.2",
     "electron": "44.7.2",
     "electron-builder": "26.15.3",
+    "three": "0.186.1",
     "vite": "8.3.4"
-  }
+  },
+  "author": "Lynx"
 }

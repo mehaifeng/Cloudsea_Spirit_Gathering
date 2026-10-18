@@ -20,6 +20,13 @@ importers:
 
   apps/desktop:
     dependencies:
+      steamworks.js:
+        specifier: 0.4.0
+        version: 0.4.0
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
+    devDependencies:
       '@cloudsea/ai':
         specifier: workspace:*
         version: link:../../packages/ai
@@ -47,16 +54,6 @@ importers:
       '@fontsource/noto-serif-sc':
         specifier: 5.3.0
         version: 5.3.0
-      steamworks.js:
-        specifier: 0.4.0
-        version: 0.4.0
-      three:
-        specifier: 0.186.1
-        version: 0.186.1
-      ws:
-        specifier: 8.22.0
-        version: 8.22.0
-    devDependencies:
       '@playwright/test':
         specifier: 1.64.1
         version: 1.64.1
@@ -72,6 +69,9 @@ importers:
       electron-builder:
         specifier: 26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0)
+      three:
+        specifier: 0.186.1
+        version: 0.186.1
       vite:
         specifier: 8.3.4
         version: 8.3.4(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)

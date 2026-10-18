@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- 云海拾灵图标（代码绘制）：暮色天空、云海、浮岛、灯塔与一只絮灵 -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F6C9A4"/>
+      <stop offset="0.6" stop-color="#F3B94D"/>
+      <stop offset="1" stop-color="#E8A06A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFF6D6" stop-opacity="1"/>
+      <stop offset="1" stop-color="#FFF6D6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="url(#sky)"/>
+  <circle cx="300" cy="150" r="120" fill="url(#glow)"/>
+  <!-- 云海 -->
+  <path d="M16 360 Q80 320 140 350 T260 345 T380 340 T496 350 V392 Q496 496 392 496 H120 Q16 496 16 392 Z" fill="#FFF8EF"/>
+  <path d="M16 400 Q90 372 160 398 T300 394 T420 396 T496 402 V420 Q496 496 392 496 H120 Q16 496 16 420 Z" fill="#F1E3D3"/>
+  <!-- 浮岛 -->
+  <path d="M150 300 L362 300 L330 336 L290 350 L250 372 L214 352 L178 334 Z" fill="#8A6A52"/>
+  <path d="M140 300 Q256 262 372 300 Z" fill="#9CCB6E"/>
+  <!-- 灯塔 -->
+  <path d="M290 296 L300 160 L320 160 L330 296 Z" fill="#E9E1D3"/>
+  <rect x="294" y="196" width="32" height="12" fill="#C8573E"/>
+  <rect x="292" y="240" width="36" height="12" fill="#C8573E"/>
+  <rect x="294" y="136" width="32" height="26" rx="4" fill="#FFF3B0"/>
+  <path d="M290 136 L310 112 L330 136 Z" fill="#5A4636"/>
+  <circle cx="310" cy="148" r="34" fill="url(#glow)"/>
+  <!-- 絮灵（圆滚滚的暖芽） -->
+  <ellipse cx="206" cy="270" rx="46" ry="38" fill="#FFE2B0"/>
+  <path d="M176 242 L168 210 L192 236 Z" fill="#FFE2B0"/>
+  <path d="M236 242 L246 210 L220 236 Z" fill="#FFE2B0"/>
+  <circle cx="192" cy="266" r="6" fill="#3B2E28"/>
+  <circle cx="220" cy="266" r="6" fill="#3B2E28"/>
+  <circle cx="194" cy="264" r="2" fill="#FFFFFF"/>
+  <circle cx="222" cy="264" r="2" fill="#FFFFFF"/>
+  <ellipse cx="182" cy="280" rx="7" ry="4" fill="#F3A08A" opacity="0.7"/>
+  <ellipse cx="230" cy="280" rx="7" ry="4" fill="#F3A08A" opacity="0.7"/>
+  <path d="M206 214 Q214 196 228 198 Q216 206 214 220 Z" fill="#9CCB6E"/>
+</svg>

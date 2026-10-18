@@ -28,7 +28,7 @@ async function launch(scene: string) {
 
 const BTN = { a: 0, b: 1, x: 2, y: 3, lt: 6, rt: 7, select: 8, start: 9, up: 12, down: 13, left: 14, right: 15 } as const;
 
-async function press(win: Page, b: keyof typeof BTN, hold = 90): Promise<void> {
+async function press(win: Page, b: keyof typeof BTN, hold = 180): Promise<void> {
   await win.evaluate(`window.__pad.buttons[${BTN[b]}] = { pressed: true, touched: true, value: 1 }`);
   await win.waitForTimeout(hold);
   await win.evaluate(`window.__pad.buttons[${BTN[b]}] = { pressed: false, touched: false, value: 0 }`);
@@ -55,15 +55,23 @@ test('手柄：探索、菜单、交互', async () => {
     expect(await win.locator('#hints').textContent()).toContain('左摇杆');
     // 右摇杆转镜头
     const c0 = await g<{ yaw: number }>(win, 'g.camera()');
-    await stick(win, [0, 0, 1, 0], 500);
-    expect(Math.abs((await g<{ yaw: number }>(win, 'g.camera()')).yaw - c0.yaw)).toBeGreaterThan(0.3);
+    await win.evaluate('window.__pad.axes = [0, 0, 1, 0]');
+    let turned = 0;
+    for (let i = 0; i < 60 && turned <= 0.3; i++) {
+      await win.waitForTimeout(50);
+      turned = Math.abs((await g<{ yaw: number }>(win, 'g.camera()')).yaw - c0.yaw);
+    }
+    await win.evaluate('window.__pad.axes = [0, 0, 0, 0]');
+    expect(turned).toBeGreaterThan(0.3);
     // X 跳
-    await press(win, 'x', 60);
+    // 按下 X 的同时就开始看是不是离地了（机器忙时帧慢，不能等松开再看）
+    const jumping = press(win, 'x');
     let air = false;
-    for (let i = 0; i < 10 && !air; i++) {
+    for (let i = 0; i < 40 && !air; i++) {
       air = await g<boolean>(win, 'g.player().airborne');
       await win.waitForTimeout(30);
     }
+    await jumping;
     expect(air).toBe(true);
     await win.waitForTimeout(800);
     // 走到码头上，A 交互 → 打开码头面板；B 关掉（先让跟着的絮灵留在家里，免得它比码头更近）

@@ -1,6 +1,6 @@
 # 回归清单（累积）
 
-每个里程碑结束时完整走一遍。自动化部分：`pnpm test`（单元测试）、`pnpm smoke`（截图冒烟 + 新手引导全流程）、`pnpm --filter @cloudsea/battle-sim start`（平衡数据）。
+每个里程碑结束时完整走一遍。自动化部分：`pnpm test`（单元测试，含 3 个种子的自动通关与本地化键集检查）、`pnpm smoke`（截图冒烟 + 新手引导全流程 + 联机 + 灵性模式 + 手柄 + 英文界面）、`pnpm scenes`（场景截图）、`pnpm --filter @cloudsea/battle-sim start`（平衡数据）。
 
 ## M1（2026-10-17 加入，待 Lynx 验收后生效）
 - [ ] 新游戏 → 引导 6 步全部能走完（自动化：`tests/playthrough.spec.ts`）
@@ -15,3 +15,14 @@
 - [ ] 守岛人聊天、送礼每日一次、剧情节点奖励蓝图（单元测试 + 自动化截图）
 - [ ] 存档后读档继续运行，结果与不存档完全一致（单元测试）
 - [ ] 昼夜、天气表现正常（自动化截图：白天 / 夜晚 / 近景）
+
+## M3 / M4（2026-10-18 加入，待 Lynx 验收后生效）
+- [ ] 五大区按顺序开放；灯塔守卫 → 云主 → 灯塔重燃 → 雾散 → 下一区（单元测试 `progress.test.ts`；自动通关 `tools/campaign`）
+- [ ] 第五座灯塔重燃后播放终章（自动通关）
+- [ ] 每个新世界的守岛人 6–10 位、阿禾和岚在晴原（单元测试 `keeperDraw.test.ts`）
+- [ ] 灵性模式：设置、生成对话、失败回退、key 不外泄（`tests/spirit.spec.ts`、主进程单元测试）
+- [ ] 岛屿码参观、队伍码挑战、共鸣繁殖（`scenes` 的 share 场景、单元测试）
+- [ ] 成就达成与补发（单元测试、`scenes` 的 achievements 场景）
+- [ ] 手柄核心操作（`tests/gamepad.spec.ts`）
+- [ ] 英文界面没有残留中文（`tests/english.spec.ts`；键集一致由单元测试保证）
+- [ ] Windows 安装包能安装、启动、卸载（CI 产物，人工在 Windows 上走一遍）

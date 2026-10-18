@@ -102,8 +102,10 @@ prototype/      M0 单文件原型，只作参考，不再修改
 - 类型检查：`pnpm typecheck`
 - 单元测试：`pnpm test`（含 sim 纯度检查：禁止非相对导入、Math.random、Date 等）
 - 场景截图自查（v0.6 测试模式）：`pnpm scenes`（每个场景直接启动到某个画面并截图、做断言，几秒一个；`SCENES=swim,dock pnpm scenes` 只跑部分）。场景定义在 `apps/desktop/src/renderer/game/scenarios.ts`；手动看某个场景：`CLOUDSEA_TEST=1 CLOUDSEA_SCENE=swim pnpm dev`
-- 截图冒烟 + 全流程回归 + 双窗口联机回归：`pnpm smoke`（打包后用 Playwright 启动 Electron，按新手引导走一遍核心循环；截图存到 `apps/desktop/screenshots/`，不入库）
+- 截图冒烟 + 全流程回归 + 双窗口联机回归 + 灵性模式 + 手柄 + 英文界面：`pnpm smoke`（打包后用 Playwright 启动 Electron，按新手引导走一遍核心循环；截图存到 `apps/desktop/screenshots/`，不入库）
 - 平衡模拟：`pnpm --filter @cloudsea/battle-sim start [--matches 200] [--levels 1,10,30,60] [--json]`
+- 安装包（M4-4）：`pnpm --filter @cloudsea/desktop dist:win`（Windows NSIS，产物在 apps/desktop/release/）；`dist:dir` 出当前平台的免安装目录
+- 商店素材（M4-4）：`pnpm --filter @cloudsea/desktop store-art`（中英截图与胶囊图，输出到 apps/desktop/screenshots/store/）
 - 自动通关（M3-6）：`pnpm --filter @cloudsea/campaign start [--seed 1] [--days 60]`（只发意图，从新游戏打到终章，打印里程碑）
 - 测试模式：环境变量 `CLOUDSEA_TEST=1` 时存档写临时目录、世界种子固定、页面暴露 `window.__game`（只发意图）
 

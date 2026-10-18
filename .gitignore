@@ -12,3 +12,5 @@ playwright-report/
 screenshots/
 .env
 .env.*
+# 安装包产物（M4-4，由 CI 上传为构建产物）
+release/

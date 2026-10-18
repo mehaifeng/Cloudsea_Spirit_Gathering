@@ -69,7 +69,7 @@ export class GamepadInput {
     const look = { x: axis(2), y: axis(3) };
     const zoom = (pad.buttons[B.rt]?.value ?? 0) - (pad.buttons[B.lt]?.value ?? 0);
     if (Math.hypot(move.x, move.y) > 0 || Math.hypot(look.x, look.y) > 0 || pressed.some(Boolean)) this.active = true;
-    this.input.setPad({ move, look, zoom, run: Math.hypot(move.x, move.y) > 0.9 });
+    this.input.setPad({ move, look, zoom, run: Math.hypot(move.x, move.y) > 0.9 }, dt);
 
     const edge = (i: number) => !!pressed[i] && !this.prev[i];
     const repeat = (i: number) => {

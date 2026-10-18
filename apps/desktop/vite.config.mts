@@ -1,10 +1,15 @@
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
 export default defineConfig({
   root: fileURLToPath(new URL('./src/renderer', import.meta.url)),
   // 打包后用 file:// 加载，资源路径必须是相对的
   base: './',
+  // 版本号（M4-4）：标题画面显示
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   resolve: {
     // 字体文件（fonts.css 里用 @fonts/... 引用，见 scripts/fonts.mjs）
     alias: { '@fonts': fileURLToPath(new URL('./node_modules/@fontsource', import.meta.url)) },

@@ -7,5 +7,6 @@
  "队伍码里的零件不存在": "A part in this Team Code doesn't exist.",
  "队伍码里的零件槽位不对": "A part in this Team Code is in the wrong slot.",
  "队伍码里的异化标记无效": "The mutation flag in this Team Code is invalid.",
- "队伍码里有无效的絮灵": "This Team Code contains an invalid spirit."
+ "队伍码里有无效的絮灵": "This Team Code contains an invalid spirit.",
+ " · 抢先体验": " · Early Access"
 }

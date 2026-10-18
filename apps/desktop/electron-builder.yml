@@ -1,0 +1,37 @@
+# Windows 安装包（M4-4）：pnpm --filter @cloudsea/desktop dist:win
+# 渲染端已由 Vite 打包进 dist/renderer，主进程在 dist-electron；只需随包带上 ws 和 steamworks.js 两个运行时依赖。
+appId: com.cloudsea.spiritgathering
+productName: Cloudsea Spirit Gathering
+copyright: Copyright © 2026 Lynx
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - dist-electron/**
+  - "!dist-electron/**/*.test.js"
+  - package.json
+asar: true
+# steamworks.js 带原生模块（.node 与 steam_api64.dll），不能放进 asar
+asarUnpack:
+  - "**/node_modules/steamworks.js/**"
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+  # 正式发布前在 CI 里配代码签名证书（Lynx 决定是否购买）；没有证书时不签名
+  signAndEditExecutable: true
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: 云海拾灵
+  uninstallDisplayName: 云海拾灵 Cloudsea Spirit Gathering
+  installerLanguages: [zh_CN, en_US]
+  language: "2052"
+  artifactName: CloudseaSpiritGathering-${version}-setup-x64.${ext}
+mac:
+  target: dir
+  icon: build/icon.png

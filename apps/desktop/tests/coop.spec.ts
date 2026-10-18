@@ -95,7 +95,9 @@ test('双窗口联机：加入、互相看见、合作战斗、离开', async ()
 
   // 两边各自选轻击，直到打完
   const cont = (w: Page) => w.locator('#battle-ui .btn', { hasText: /^继续$/ });
-  for (let i = 0; i < 40; i++) {
+  // 按时间而不是按回合数等（机器忙的时候动画慢）
+  const until = Date.now() + 120_000;
+  for (let i = 0; Date.now() < until; i++) {
     if ((await cont(host.win).isVisible().catch(() => false)) && (await cont(guest.win).isVisible().catch(() => false))) break;
     for (const w of [host.win, guest.win]) {
       const b = w.locator('#battle-ui .btn:not([aria-disabled="true"])', { hasText: '轻击' }).first();
@@ -107,8 +109,8 @@ test('双窗口联机：加入、互相看见、合作战斗、离开', async ()
     }
     await host.win.waitForTimeout(700);
   }
-  await cont(host.win).click();
-  await cont(guest.win).click();
+  await cont(host.win).click({ timeout: 60_000 });
+  await cont(guest.win).click({ timeout: 60_000 });
   await waitFor(host.win, `g.mode() === 'explore'`);
   await waitFor(guest.win, `g.mode() === 'explore'`);
 

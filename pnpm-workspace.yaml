@@ -7,3 +7,5 @@ packages:
 allowBuilds:
   electron: true
   esbuild: true
+  # electron-builder 的 Squirrel 安装器依赖；我们只出 NSIS 安装包，不需要它的安装脚本
+  electron-winstaller: false

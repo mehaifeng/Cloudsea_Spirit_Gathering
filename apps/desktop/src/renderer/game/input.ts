@@ -18,12 +18,14 @@ export class Input {
   /** 手柄的模拟量（M4-2）：每帧由 GamepadInput 写入。 */
   private pad: { move: { x: number; y: number }; look: { x: number; y: number }; zoom: number; run: boolean } | null = null;
 
-  setPad(pad: Input['pad']): void {
+  /** dt：这一帧的秒数。镜头转速按时间算（原来按帧算，掉帧时转得慢）。 */
+  setPad(pad: Input['pad'], dt = 1 / 60): void {
     this.pad = pad;
     if (pad) {
-      this.dragDX += pad.look.x * 9;
-      this.dragDY += pad.look.y * 6;
-      this.wheel -= pad.zoom * 14;
+      const f = dt * 60;
+      this.dragDX += pad.look.x * 9 * f;
+      this.dragDY += pad.look.y * 6 * f;
+      this.wheel -= pad.zoom * 14 * f;
     }
   }
 

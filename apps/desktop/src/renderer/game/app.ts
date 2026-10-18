@@ -44,6 +44,8 @@ import { Tutorial } from './tutorial';
 import { UiRoot } from './uiRoot';
 
 /** boarding / landing：上下船表演；transition：探索 → 战斗的转场（v0.6）。 */
+declare const __APP_VERSION__: string;
+
 type Mode = 'title' | 'explore' | 'build' | 'battle' | 'sailing' | 'cutscene' | 'voyage' | 'boarding' | 'landing' | 'transition' | 'gallery' | 'visit';
 
 /** 标题画面背景：一座小岛和几只随机絮灵，镜头慢慢绕。 */
@@ -227,7 +229,7 @@ export class App {
     );
     panel.append(button('加入联机', () => void this.showJoin(panel, name.value)));
     panel.append(languageRow());
-    this.titleEl = h('div', { id: 'title' }, h('h1', {}, '云海拾灵'), h('div', { class: 'sub' }, 'Cloudsea: Spirit Gathering · M2 联机预览'), panel);
+    this.titleEl = h('div', { id: 'title' }, h('h1', {}, '云海拾灵'), h('div', { class: 'sub' }, `Cloudsea: Spirit Gathering · v${__APP_VERSION__}`, h('span', {}, ' · 抢先体验')), panel);
     this.ui.layer.append(this.titleEl);
     focusFirst(panel);
     document.body.dataset['ready'] = 'true';

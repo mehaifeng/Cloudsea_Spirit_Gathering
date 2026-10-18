@@ -21,3 +21,31 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+
+  # Windows 安装包（M4-4）：构建 NSIS 安装包、在 Windows 上跑一次启动冒烟，上传为构建产物
+  package-windows:
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: 打包
+        run: pnpm --filter @cloudsea/desktop dist:win
+        env:
+          # 没有代码签名证书时不签名（证书由 Lynx 决定是否购买，配好后在仓库 Secrets 里加 CSC_LINK / CSC_KEY_PASSWORD）
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: 启动冒烟（Windows）
+        run: pnpm --filter @cloudsea/desktop exec playwright test tests/smoke.spec.ts
+      - uses: actions/upload-artifact@v5
+        with:
+          name: cloudsea-windows-installer
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+          if-no-files-found: error
+          retention-days: 30
