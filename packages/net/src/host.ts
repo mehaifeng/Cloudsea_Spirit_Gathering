@@ -1,5 +1,5 @@
 import type { ContentDb } from '@cloudsea/content';
-import { advanceWorld, applyIntent, joinWorld, loadCharacter, playerLeaves, TICKS_PER_SECOND, type CharacterState, type WorldEvent, type WorldState } from '@cloudsea/sim';
+import { advanceWorld, applyIntent, joinWorld, loadCharacter, playerLeaves, reconcileKeepers, TICKS_PER_SECOND, type CharacterState, type WorldEvent, type WorldState } from '@cloudsea/sim';
 import { diff } from './diff';
 import { PROTOCOL_VERSION, type ClientMessage, type HostMessage } from './protocol';
 import type { HostTransport } from './transport';
@@ -34,6 +34,8 @@ export class HostSession {
     /** 每次世界推进或意图执行后调用（例如自动存档检查）。 */
     private readonly onEvents?: (events: readonly WorldEvent[]) => void,
   ) {
+    // 读档的旧世界：按种子补齐守岛人（M3-3，幂等）
+    reconcileKeepers(content, world);
     this.unsub.push(transport.onMessage((connId, msg) => this.onMessage(connId, msg)));
     this.unsub.push(transport.onDisconnect((connId) => this.onDisconnect(connId)));
   }

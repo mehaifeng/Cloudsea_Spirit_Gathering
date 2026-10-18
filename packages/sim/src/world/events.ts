@@ -35,7 +35,11 @@ export type WorldEvent =
       readonly captured: readonly string[];
       readonly rescued: boolean;
     }
-  | { readonly t: 'dialogue'; readonly playerId: string; readonly keeperId: string; readonly lines: readonly string[]; readonly title?: string }
+  | { readonly t: 'dialogue'; readonly playerId: string; readonly keeperId: string; readonly lines: readonly string[]; readonly title?: string; readonly generated?: boolean }
+  /** 灵性模式（M3-4）：请房主的 LLM 生成。只有房主处理；超时 sim 自己用默认结果。 */
+  | { readonly t: 'keeperTalkRequest'; readonly keeperId: string; readonly playerId: string; readonly situation: string; readonly level: number; readonly fallback: string }
+  | { readonly t: 'keeperPlanRequest'; readonly keeperId: string; readonly day: number }
+  | { readonly t: 'keeperSummaryRequest'; readonly keeperId: string }
   | { readonly t: 'affinity'; readonly playerId: string; readonly keeperId: string; readonly delta: number; readonly level: number }
   | { readonly t: 'built'; readonly ownerId: string; readonly buildingId: string }
   | { readonly t: 'cropReady'; readonly ownerId: string; readonly buildingId: string }

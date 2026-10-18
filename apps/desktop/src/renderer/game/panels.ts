@@ -22,6 +22,8 @@ import {
   buildingSlots,
   chapterOf,
   effectiveFog,
+  islandKeeper,
+  islandPresent,
   lighthouseLit,
   regionUnlocked,
   buildingsUsed,
@@ -717,7 +719,7 @@ export function openStarChart(ctx: Ctx): void {
         return button([h('span', {}, `${REGION_NAME[r]}${done ? ' ✦' : open ? '' : ' · 浓雾'}`)], () => ((chartRegion = r), ctx.ui.refresh(true)), { class: `${r === region ? 'selected' : ''} small`, title: open ? '' : '先点亮上一座灯塔' });
       }),
     );
-    const isles = [...ctx.content.islands.values()].filter((i) => i.region === region);
+    const isles = [...ctx.content.islands.values()].filter((i) => i.region === region && islandPresent(w, i));
     // 每个大区单独铺满一张图（chartPos 是整片群岛的坐标，航行距离用它算）
     const pts = [...isles.map((i) => i.chartPos), ...(region === 'sunPlains' ? [HOME_CHART_POS] : [])];
     const [minX, maxX, minY, maxY] = [Math.min(...pts.map((q) => q.x)), Math.max(...pts.map((q) => q.x)), Math.min(...pts.map((q) => q.y)), Math.max(...pts.map((q) => q.y))];
@@ -736,7 +738,8 @@ export function openStarChart(ctx: Ctx): void {
       const fog = effectiveFog(ctx.content, w, isl);
       const blocked = !unlocked ? '浓雾' : c.tools.lantern < fog ? `需要 ${fog} 级提灯` : c.tools.skiff < isl.skiffLevel ? `需要 ${isl.skiffLevel} 级云舟` : '';
       const fuel = fog > 0 ? `燃料 ${fog}` : isl.fogLevel > 0 ? '雾已散' : '无雾';
-      const keeper = isl.keeper ? ctx.content.keepers.get(isl.keeper)?.name ?? '' : '';
+      const kid = islandKeeper(w, isl);
+      const keeper = kid ? ctx.content.keepers.get(kid)?.name ?? '' : '';
       const sub = isl.kind === 'lighthouse' ? (lit ? '灯塔 · 已重燃' : '灯塔 · 熄灭') : keeper ? `守岛人 ${keeper}` : `Lv.${isl.wildLevel.min}–${isl.wildLevel.max}`;
       place(
         isl.chartPos,

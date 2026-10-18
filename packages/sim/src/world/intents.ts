@@ -1,8 +1,10 @@
+import { islandKeeper } from './keeperDraw';
 import {
   BLUEPRINT_SHOP,
   coreUpgradeCost,
   ECONOMY,
   GATHER_YIELD,
+  PLANNER_GOALS,
   TOOL_NAME,
   toolUpgradeCost,
   type ContentDb,
@@ -31,7 +33,7 @@ import {
 } from './home';
 import { newId } from './ids';
 import { addItems, canPay, payFrom, removeItems } from './inventory';
-import { AFFINITY, changeAffinity, giftKeeper, talkToKeeper } from './keeper';
+import { AFFINITY, changeAffinity, executeKeeperGoal, giftKeeper, goalWeights, LLM_LINE_MAX, talkToKeeper, trimMemory } from './keeper';
 import { arrivalPoint, gatherNodes, HOME_DOCK } from './layout';
 import type { CharacterState, PlayerRuntime, Rotation, WorldState } from './state';
 import { clockAt, dayOf, TICKS_PER_DAY, TICKS_PER_SECOND } from './time';
@@ -89,6 +91,11 @@ export type Intent =
   | { readonly type: 'challenge'; readonly keeperId: string }
   | { readonly type: 'importSpirit'; readonly code: string }
   | { readonly type: 'pause'; readonly paused: boolean }
+  /** 灵性模式（M3-4，只有房主能发）：开关；把 LLM 生成的话 / 计划 / 记忆摘要交给 sim 校验后生效。 */
+  | { readonly type: 'setAiMode'; readonly mode: 'default' | 'spirit' }
+  | { readonly type: 'keeperSay'; readonly keeperId: string; readonly playerId: string; readonly text: string; readonly generated: boolean }
+  | { readonly type: 'keeperPlan'; readonly keeperId: string; readonly goal: string; readonly note?: string }
+  | { readonly type: 'keeperSummary'; readonly keeperId: string; readonly summary: string }
   | { readonly type: 'tutorial'; readonly step: number; readonly done?: boolean }
   /** 记下看过的一次性播片。 */
   | { readonly type: 'seenCutscene'; readonly id: string };
@@ -112,7 +119,7 @@ function atHome(world: WorldState, playerId: string): boolean {
 /** 守岛人能否交流：在他的岛上，或他正在拜访你的家园。 */
 function nearKeeper(content: ContentDb, world: WorldState, p: PlayerRuntime, playerId: string, keeperId: string): boolean {
   const island = content.islands.get(p.islandId);
-  if (island?.keeper === keeperId) return true;
+  if (island && islandKeeper(world, island) === keeperId) return true;
   return world.keepers[keeperId]?.visiting?.playerId === playerId && p.islandId === homeIslandId(playerId);
 }
 
@@ -139,6 +146,52 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
       if (playerId !== world.hostId) return fail('只有房主可以暂停');
       world.paused = intent.paused;
       return ok();
+
+    case 'setAiMode':
+      if (playerId !== world.hostId) return fail('只有房主可以切换');
+      if (intent.mode !== 'default' && intent.mode !== 'spirit') return fail('模式无效');
+      world.aiMode = intent.mode;
+      return ok();
+
+    case 'keeperSay': {
+      if (playerId !== world.hostId) return fail('只有房主可以生成对话');
+      const k = world.keepers[intent.keeperId];
+      const pending = k?.pendingTalk[intent.playerId];
+      if (!k || !pending) return fail('没有在等这句话');
+      const text = typeof intent.text === 'string' ? intent.text.replace(/\s+/g, ' ').trim() : '';
+      if (!text || text.length > LLM_LINE_MAX) return fail('这句话不合格');
+      delete k.pendingTalk[intent.playerId];
+      events.push({ t: 'dialogue', playerId: intent.playerId, keeperId: k.id, lines: [text], ...(intent.generated ? { generated: true } : {}) });
+      if (intent.generated) {
+        k.memory.push(`第 ${dayOf(world.tick)} 天：对 ${world.characters[intent.playerId]?.name ?? '客人'} 说“${text.slice(0, 40)}”`);
+        trimMemory(world, k, events);
+      }
+      return ok();
+    }
+
+    case 'keeperPlan': {
+      if (playerId !== world.hostId) return fail('只有房主可以安排');
+      const k = world.keepers[intent.keeperId];
+      if (!k?.pendingPlan) return fail('没有在等计划');
+      const idx = (PLANNER_GOALS as readonly string[]).indexOf(intent.goal);
+      // 只能选今天允许的目标（白名单 + 规则校验，DESIGN 11.4）
+      if (idx < 0 || goalWeights(content, world, k)[idx]! <= 0) return fail('今天不能做这件事');
+      const note = typeof intent.note === 'string' ? intent.note.replace(/\s+/g, ' ').trim().slice(0, 60) : undefined;
+      executeKeeperGoal(content, world, k, PLANNER_GOALS[idx]!, events, note || undefined);
+      return ok();
+    }
+
+    case 'keeperSummary': {
+      if (playerId !== world.hostId) return fail('只有房主可以整理记忆');
+      const k = world.keepers[intent.keeperId];
+      if (!k) return fail('没有这位守岛人');
+      const summary = typeof intent.summary === 'string' ? intent.summary.replace(/\s+/g, ' ').trim() : '';
+      if (!summary || summary.length > 300) return fail('摘要不合格');
+      k.summary = summary;
+      k.summaryPending = false;
+      if (k.memory.length > 10) k.memory.splice(0, k.memory.length - 10);
+      return ok();
+    }
 
     case 'move': {
       if (inBattle) return fail('战斗中不能移动');

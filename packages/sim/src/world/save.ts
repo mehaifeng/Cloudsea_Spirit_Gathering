@@ -7,7 +7,7 @@ import type { CharacterState, PlayerRuntime, WorldState } from './state';
  * 存档（铁律 7、DESIGN 9.3 / 9.4）：世界存档与角色存档分开，都带 version。
  * 结构变更时：版本号 +1，在 MIGRATIONS 里加一条从旧版本升级的函数，并补测试。
  */
-export const WORLD_SAVE_VERSION = 5;
+export const WORLD_SAVE_VERSION = 6;
 export const CHARACTER_SAVE_VERSION = 3;
 
 export interface WorldSaveFile {
@@ -71,6 +71,23 @@ export const WORLD_MIGRATIONS: Readonly<Record<number, Migration>> = {
   4: (data) => {
     const w = JSON.parse(JSON.stringify(data['world'])) as Record<string, unknown>;
     w['guardiansBeaten'] = w['guardiansBeaten'] ?? [...((w['lighthousesLit'] as string[] | undefined) ?? [])];
+    return { ...data, world: w };
+  },
+  /**
+   * v5 → v6（M3-3）：守岛人按种子分配。迁移只补空表（并补上 M3-4 灵性模式的字段）；房主读档后按种子补抽（reconcileKeepers，需要内容数据）。
+   * 阿禾、岚是晴原的固定住户，抽签一定包含他们，原有的好感与剧情进度保留。
+   */
+  5: (data) => {
+    const w = JSON.parse(JSON.stringify(data['world'])) as Record<string, unknown>;
+    w['keeperIslands'] = w['keeperIslands'] ?? {};
+    // M3-4：灵性模式
+    w['aiMode'] = w['aiMode'] ?? 'default';
+    for (const k of Object.values((w['keepers'] ?? {}) as Record<string, Record<string, unknown>>)) {
+      k['summary'] ??= '';
+      k['pendingPlan'] ??= null;
+      k['pendingTalk'] ??= {};
+      k['summaryPending'] ??= false;
+    }
     return { ...data, world: w };
   },
 };

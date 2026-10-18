@@ -123,6 +123,13 @@ export interface KeeperState {
   visiting: { playerId: string; untilTick: number } | null;
   /** 最近事件日志（灵性模式的记忆；默认模式只用于展示）。 */
   memory: string[];
+  /** 长期摘要（灵性模式压缩记忆得到；关闭灵性模式后保留，DESIGN 11.5）。 */
+  summary: string;
+  /** 灵性模式：等 LLM 的今日计划（超时用默认规划）。 */
+  pendingPlan: { day: number; deadline: number } | null;
+  /** 灵性模式：等 LLM 说的话（玩家 id → 超时时说对话库里的那句）。 */
+  pendingTalk: Record<string, { deadline: number; fallback: string; situation: string }>;
+  summaryPending: boolean;
 }
 
 export interface Order {
@@ -175,6 +182,10 @@ export interface WorldState {
   homes: Record<string, HomeIsland>;
   islands: Record<string, IslandRuntime>;
   keepers: Record<string, KeeperState>;
+  /** 守岛人的思考与说话方式（DESIGN 11.5）：default 规则 + 对话库；spirit 由房主的 LLM 生成（M3-4）。 */
+  aiMode: 'default' | 'spirit';
+  /** 守岛人岛 → 住在那里的守岛人（M3-3，按种子分配）。 */
+  keeperIslands: Record<string, string>;
   orders: Order[];
   /** 最近一次做过每日结算的游戏日。 */
   lastDailyDay: number;

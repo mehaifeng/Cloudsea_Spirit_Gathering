@@ -13,6 +13,7 @@ import type { WorldEvent } from './events';
 import { newId } from './ids';
 import type { KeeperState, Order, WorldState } from './state';
 import { clockAt, dayOf, TICKS_PER_DAY } from './time';
+import { regionUnlocked } from './progress';
 import { weatherAt } from './weather';
 
 /** 好感变化（DESIGN 11.3；数值为补充决定 D37）。 */
@@ -93,7 +94,7 @@ export function talkToKeeper(content: ContentDb, world: WorldState, keeperId: st
   }
   const level = affinityLevel(keeperAffinity(k, playerId));
   const rng = dialogueRng(world, keeperId, playerId, 'talk');
-  const region = 'sunPlains' as const;
+  const region = content.keepers.get(keeperId)!.region;
   const weather = weatherAt(world.seed, region, world.tick);
   const situations: Situation[] = [firstToday ? 'greeting' : 'smallTalk'];
   if (!firstToday) {
@@ -101,7 +102,14 @@ export function talkToKeeper(content: ContentDb, world: WorldState, keeperId: st
     situations.push('aboutIsland', 'smallTalk');
   }
   const situation = situations[firstToday ? 0 : rng.int(0, situations.length - 1)]!;
-  events.push({ t: 'dialogue', playerId, keeperId, lines: [pickLine(content, keeperId, situation, level, rng)] });
+  const line = pickLine(content, keeperId, situation, level, rng);
+  if (world.aiMode === 'spirit') {
+    // 灵性模式：请房主用 LLM 说这句话；超时用对话库的这句（M3-4）
+    k.pendingTalk[playerId] = { deadline: world.tick + SPIRIT_WAIT_TICKS, fallback: line, situation };
+    events.push({ t: 'keeperTalkRequest', keeperId, playerId, situation, level, fallback: line });
+    return;
+  }
+  events.push({ t: 'dialogue', playerId, keeperId, lines: [line] });
 }
 
 /** 送礼：每天对同一人最多计 1 次好感（DESIGN 11.3）。 */
@@ -125,24 +133,60 @@ export function giftKeeper(content: ContentDb, world: WorldState, keeperId: stri
   return null;
 }
 
-/**
- * 默认模式的加权随机规划器（DESIGN 11.4 / 11.5）：每个游戏日选一个目标，按性格权重与世界状态调整。
- * 使用世界种子，保证同一存档回放一致。
- */
-export function planKeeperDay(content: ContentDb, world: WorldState, k: KeeperState, events: WorldEvent[]): void {
+/** LLM 生成的一句话的长度上限（DESIGN 11.6）。 */
+export const LLM_LINE_MAX = 120;
+
+/** 灵性模式等 LLM 的时限（tick）：超时就用默认模式的结果（DESIGN 11.5，M3-4）。 */
+export const SPIRIT_WAIT_TICKS = 200;
+/** 记忆条数：超过就压缩（灵性模式）或丢掉最旧的。 */
+export const MEMORY_SUMMARY_AT = 30;
+const MEMORY_CAP = { default: 30, spirit: 40 } as const;
+
+/** 今天各目标的权重（性格 × 天气 × 世界状态）；权重为 0 的目标今天不能选。 */
+export function goalWeights(content: ContentDb, world: WorldState, k: KeeperState): number[] {
   const def = content.keepers.get(k.id)!;
   const day = dayOf(world.tick);
-  const rng = createRng(deriveSeed(world.seed, `plan:${k.id}:${day}`));
-  const weather = weatherAt(world.seed, 'sunPlains', world.tick);
-  const weights = PLANNER_GOALS.map((g) => {
+  const weather = weatherAt(world.seed, def.region, world.tick);
+  return PLANNER_GOALS.map((g) => {
     let w = def.plannerWeights[g] ?? 0;
     if (g === 'farm' && (weather === 'rain' || weather === 'sun')) w *= 1.5;
     if (g === 'explore' && weather === def.favoriteElement) w *= 1.5;
     if (g === 'visit' && !Object.values(world.characters).some((c) => c.tutorial.done)) w = 0;
+    // 还在浓雾里的大区，守岛人出不来（M3-3）
+    if (g === 'visit' && !regionUnlocked(content, world, def.region)) w = 0;
     if (g === 'postOrder' && world.orders.some((o) => o.source === k.id && o.fulfilledBy === null && o.expiresDay >= day)) w = 0;
     return w;
   });
-  const goal: PlannerGoal = PLANNER_GOALS[rng.weightedIndex(weights)]!;
+}
+
+/**
+ * 每个游戏日开始时给守岛人定目标（DESIGN 11.4 / 11.5）。
+ * - 默认模式：加权随机规划器当场定（世界种子，回放一致）；
+ * - 灵性模式：先挂起并发出请求，房主拿 LLM 的结果用 keeperPlan 意图交回来；超时由 tick 用默认结果补上。
+ */
+export function planKeeperDay(content: ContentDb, world: WorldState, k: KeeperState, events: WorldEvent[]): void {
+  const day = dayOf(world.tick);
+  if (world.aiMode === 'spirit') {
+    k.pendingPlan = { day, deadline: world.tick + SPIRIT_WAIT_TICKS };
+    events.push({ t: 'keeperPlanRequest', keeperId: k.id, day });
+    return;
+  }
+  executeKeeperGoal(content, world, k, randomGoal(content, world, k), events);
+}
+
+/** 默认模式的加权随机目标。 */
+export function randomGoal(content: ContentDb, world: WorldState, k: KeeperState): PlannerGoal {
+  const rng = createRng(deriveSeed(world.seed, `plan:${k.id}:${dayOf(world.tick)}`));
+  return PLANNER_GOALS[rng.weightedIndex(goalWeights(content, world, k))]!;
+}
+
+/** 执行今天的目标（执行层确定性：随机数仍来自世界种子）。note：灵性模式下守岛人对今天的打算。 */
+export function executeKeeperGoal(content: ContentDb, world: WorldState, k: KeeperState, goal: PlannerGoal, events: WorldEvent[], note?: string): void {
+  const def = content.keepers.get(k.id)!;
+  const day = dayOf(world.tick);
+  const rng = createRng(deriveSeed(world.seed, `exec:${k.id}:${day}`));
+  k.pendingPlan = null;
+  if (note) k.memory.push(`第 ${day} 天的打算：${note}`);
   k.goal = goal;
   k.goalDay = day;
   switch (goal) {
@@ -184,7 +228,29 @@ export function planKeeperDay(content: ContentDb, world: WorldState, k: KeeperSt
       k.memory.push(`第 ${day} 天：${goal === 'explore' ? '出海转了一圈' : '在家歇着'}`);
       break;
   }
-  if (k.memory.length > 30) k.memory.splice(0, k.memory.length - 30);
+  trimMemory(world, k, events);
+}
+
+/** 记忆太长：灵性模式请房主压缩成长期摘要；放不下了就丢最旧的。 */
+export function trimMemory(world: WorldState, k: KeeperState, events: WorldEvent[]): void {
+  if (world.aiMode === 'spirit' && k.memory.length >= MEMORY_SUMMARY_AT && !k.summaryPending) {
+    k.summaryPending = true;
+    events.push({ t: 'keeperSummaryRequest', keeperId: k.id });
+  }
+  const cap = MEMORY_CAP[world.aiMode];
+  if (k.memory.length > cap) k.memory.splice(0, k.memory.length - cap);
+}
+
+/** 灵性模式超时：守岛人的计划与对话按默认模式补上（每 tick 调用）。 */
+export function expireSpiritRequests(content: ContentDb, world: WorldState, events: WorldEvent[]): void {
+  for (const k of Object.values(world.keepers)) {
+    if (k.pendingPlan && world.tick >= k.pendingPlan.deadline) executeKeeperGoal(content, world, k, randomGoal(content, world, k), events);
+    for (const [pid, t] of Object.entries(k.pendingTalk)) {
+      if (world.tick < t.deadline) continue;
+      delete k.pendingTalk[pid];
+      events.push({ t: 'dialogue', playerId: pid, keeperId: k.id, lines: [t.fallback] });
+    }
+  }
 }
 
 /** 守岛人对战每天每人一次。 */

@@ -1,3 +1,4 @@
+import { islandPresent } from './keeperDraw';
 import { HOME_CHART_POS, REGION_NAME, type ContentDb } from '@cloudsea/content';
 import { effectiveFog, regionUnlocked } from './progress';
 import { homeIslandId } from './create';
@@ -71,16 +72,16 @@ export function tickVoyages(content: ContentDb, world: WorldState, events: World
  * 能不能出航；不能时返回原因（v0.6：客户端先用它预检，通过后才播上船动画再发意图）。
  * 纯函数，不改状态；`sail` 意图里用同一套判定。
  */
-export function sailBlocked(content: ContentDb, p: Readonly<PlayerRuntime>, c: Readonly<CharacterState>, playerId: string, islandId: string, world?: Readonly<WorldState>): string | null {
+export function sailBlocked(content: ContentDb, p: Readonly<PlayerRuntime>, c: Readonly<CharacterState>, playerId: string, islandId: string, world: Readonly<WorldState>): string | null {
   if (p.battleId !== null) return '战斗中不能出航';
   if (p.voyage) return '正在航行中';
   const to = islandId === 'home' ? homeIslandId(playerId) : islandId;
   if (to === p.islandId) return '已经在这座岛上了';
   if (to !== homeIslandId(playerId)) {
     const island = content.islands.get(to);
-    if (!island) return '没有这座岛';
-    if (world && !regionUnlocked(content, world, island.region)) return `${REGION_NAME[island.region]}还在浓雾里：先点亮上一座灯塔`;
-    const fog = world ? effectiveFog(content, world, island) : island.fogLevel;
+    if (!island || !islandPresent(world, island)) return '没有这座岛';
+    if (!regionUnlocked(content, world, island.region)) return `${REGION_NAME[island.region]}还在浓雾里：先点亮上一座灯塔`;
+    const fog = effectiveFog(content, world, island);
     if (c.tools.skiff < island.skiffLevel) return `需要 ${island.skiffLevel} 级云舟`;
     if (c.tools.lantern < fog) return `雾太浓了，需要 ${fog} 级提灯`;
     if (fog > 0 && (c.backpack['lanternFuel'] ?? 0) < fog) return `提灯燃料不够（需要 ${fog}）`;

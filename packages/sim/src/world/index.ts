@@ -16,3 +16,4 @@ export * from './voyage';
 export * from './weather';
 export * from './wild';
 export * from './progress';
+export * from './keeperDraw';

@@ -7,7 +7,7 @@ import { tickBattles } from './battleflow';
 import { homeIslandId } from './create';
 import { hasRoomForSpirit, tickHome } from './home';
 import { newId } from './ids';
-import { planKeeperDay } from './keeper';
+import { expireSpiritRequests, planKeeperDay } from './keeper';
 import type { CharacterState, Order, WorldState } from './state';
 import { dayOf } from './time';
 import { tickVoyages } from './voyage';
@@ -115,5 +115,6 @@ export function advanceWorld(content: ContentDb, world: WorldState, dt: number):
   for (const k of Object.values(world.keepers)) {
     if (k.visiting && world.tick >= k.visiting.untilTick) k.visiting = null;
   }
+  expireSpiritRequests(content, world, events);
   return events;
 }

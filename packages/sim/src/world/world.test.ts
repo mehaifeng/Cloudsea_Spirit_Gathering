@@ -115,8 +115,8 @@ describe('开局与采集', () => {
     expect(applyIntent(content, w, 'p1', { type: 'sail', islandId: 'mistHollow' }).error).toMatch(/提灯/);
     expect(applyIntent(content, w, 'p1', { type: 'sail', islandId: 'brookIsle' }).error).toMatch(/燃料/);
     // 客户端预检与意图用同一套判定
-    expect(sailBlocked(content, w.players['p1']!, w.characters['p1']!, 'p1', 'brookIsle')).toMatch(/燃料/);
-    expect(sailBlocked(content, w.players['p1']!, w.characters['p1']!, 'p1', 'wheatSlope')).toMatch(/已经在/);
+    expect(sailBlocked(content, w.players['p1']!, w.characters['p1']!, 'p1', 'brookIsle', w)).toMatch(/燃料/);
+    expect(sailBlocked(content, w.players['p1']!, w.characters['p1']!, 'p1', 'wheatSlope', w)).toMatch(/已经在/);
     w.characters['p1']!.backpack['lanternFuel'] = 3;
     act(w, { type: 'sail', islandId: 'brookIsle' });
     expect(w.characters['p1']!.backpack['lanternFuel']).toBe(2);

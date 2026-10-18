@@ -1,3 +1,4 @@
+import { reconcileKeepers } from './keeperDraw';
 import { ECONOMY, type ContentDb } from '@cloudsea/content';
 import { createRng, deriveSeed } from '../rng';
 import { generateWildGenes } from '../spirit/genes';
@@ -50,7 +51,7 @@ export function createHome(ownerId: string, seed: number): HomeIsland {
   };
 }
 
-function createKeeper(content: ContentDb, keeperId: string, seed: number): KeeperState {
+export function createKeeper(content: ContentDb, keeperId: string, seed: number): KeeperState {
   const k = content.keepers.get(keeperId)!;
   const rng = createRng(deriveSeed(seed, `keeper:${keeperId}`));
   const spirits = k.coreSpirits.map((c, i) =>
@@ -77,11 +78,15 @@ function createKeeper(content: ContentDb, keeperId: string, seed: number): Keepe
     goalDay: 0,
     visiting: null,
     memory: [],
+    summary: '',
+    pendingPlan: null,
+    pendingTalk: {},
+    summaryPending: false,
   };
 }
 
 export function createWorld(content: ContentDb, o: { seed: number; hostId: string }): WorldState {
-  return {
+  const world: WorldState = {
     version: 1,
     seed: o.seed >>> 0,
     tick: 0,
@@ -92,7 +97,9 @@ export function createWorld(content: ContentDb, o: { seed: number; hostId: strin
     players: {},
     homes: {},
     islands: {},
-    keepers: Object.fromEntries([...content.keepers.keys()].map((id) => [id, createKeeper(content, id, o.seed)])),
+    keepers: {},
+    aiMode: 'default',
+    keeperIslands: {},
     orders: [],
     lastDailyDay: 0,
     battles: {},
@@ -100,6 +107,8 @@ export function createWorld(content: ContentDb, o: { seed: number; hostId: strin
     lighthousesLit: [],
     guardiansBeaten: [],
   };
+  reconcileKeepers(content, world);
+  return world;
 }
 
 export function homeIslandId(playerId: string): string {

@@ -5,6 +5,8 @@ import {
   cloudlordSpirits,
   effectiveFog,
   GUARDIAN_SPOT,
+  islandKeeper,
+  islandPresent,
   clockAt,
   worldPosition,
   foundationHeight,
@@ -347,7 +349,8 @@ export class ExploreView {
             this.obstacles.push({ x: GUARDIAN_SPOT.x, z: GUARDIAN_SPOT.z, r: 0.45 });
           }
         }
-        if (this.island!.keeper) this.buildKeeperHome(this.island!.keeper);
+        const kid = islandKeeper(world, this.island!);
+        if (kid) this.buildKeeperHome(kid);
       }
     }
     this.root.add(this.islandMesh);
@@ -504,7 +507,7 @@ export class ExploreView {
       this.distant.set(key, lod);
     };
     for (const isl of this.content.islands.values()) {
-      if (isl.id === this.islandId) continue;
+      if (isl.id === this.islandId || !islandPresent(world, isl)) continue;
       place(isl.id, islandTerrain(isl), worldPosition(isl, HOME_CHART_POS), isl.seed);
     }
     if (!this.isHome) {
@@ -515,10 +518,13 @@ export class ExploreView {
 
   /** 守岛人岛的房子与陈设（守岛人岛本身是抽象模拟，到访时按规则实例化，DESIGN 11.7）。 */
   private buildKeeperHome(keeperId: string): void {
-    const layout: Array<[string, number, number, number, number]> =
-      keeperId === 'aHe'
-        ? [['nest', -5, -4, 3, 3], ['workshop', 4.5, -5, 5, 4], ['field', -7.5, 2, 3, 3], ['field', -4, 2, 3, 3], ['field', -7.5, 5.5, 3, 3], ['lamp', 0, -2, 1, 1], ['flowerbed', 2, 3, 1, 1]]
-        : [['nest', -4, -4.5, 3, 3], ['lamp', -1.5, 1.5, 1, 1], ['lamp', 3.5, 1.5, 1, 1], ['lamp', 1, -3, 1, 1], ['fence', 5.5, -2, 1, 1], ['fence', 5.5, -1, 1, 1], ['fence', 5.5, 0, 1, 1], ['storage', 4, -6, 4, 3]];
+    type Layout = Array<[string, number, number, number, number]>;
+    const farm: Layout = [['nest', -5, -4, 3, 3], ['workshop', 4.5, -5, 5, 4], ['field', -7.5, 2, 3, 3], ['field', -4, 2, 3, 3], ['field', -7.5, 5.5, 3, 3], ['lamp', 0, -2, 1, 1], ['flowerbed', 2, 3, 1, 1]];
+    const terrace: Layout = [['nest', -4, -4.5, 3, 3], ['lamp', -1.5, 1.5, 1, 1], ['lamp', 3.5, 1.5, 1, 1], ['lamp', 1, -3, 1, 1], ['fence', 5.5, -2, 1, 1], ['fence', 5.5, -1, 1, 1], ['fence', 5.5, 0, 1, 1], ['storage', 4, -6, 4, 3]];
+    const smith: Layout = [['workshop', -5, -5, 5, 4], ['storage', 4, -5.5, 4, 3], ['nest', 5, 1.5, 3, 3], ['lamp', -1.5, -1.5, 1, 1], ['path', 0, 1, 1, 1], ['path', 0, 2, 1, 1], ['flowerbed', -3, 2.5, 1, 1]];
+    const spring: Layout = [['hotSpring', -4.5, -4, 4, 4], ['nest', 4, -4.5, 3, 3], ['lamp', 0, -2.5, 1, 1], ['lamp', 2, 2, 1, 1], ['flowerbed', -2, 2.5, 1, 1], ['flowerbed', -1, 2.5, 1, 1], ['field', 5, 1.5, 3, 3]];
+    // 阿禾、岚的岛是手摆的；人设池里的守岛人按 id 选一种布置（M3-3）
+    const layout = keeperId === 'aHe' ? farm : keeperId === 'lan' ? terrace : [farm, terrace, smith, spring][hashId(keeperId) % 4]!;
     for (const [type, x, z, w, d] of layout) {
       const v = makeBuildingView(type, w, d, hashId(`${keeperId}:${x}:${z}`));
       v.group.position.set(x, this.terrain.height(x, z), z);
@@ -616,7 +622,7 @@ export class ExploreView {
     this.syncLighthouse(world);
 
     // 守岛人
-    const keeperHere = this.island?.keeper ?? null;
+    const keeperHere = this.island ? islandKeeper(world, this.island) : null;
     const visitors = Object.values(world.keepers).filter((k) => k.visiting?.playerId === PLAYER_ID && this.isHome).map((k) => k.id);
     const keeperIds = [...(keeperHere ? [keeperHere] : []), ...visitors];
     for (const kid of keeperIds) {
