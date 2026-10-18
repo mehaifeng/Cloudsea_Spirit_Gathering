@@ -41,6 +41,24 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: 启动冒烟（Windows）
         run: pnpm --filter @cloudsea/desktop exec playwright test tests/smoke.spec.ts
+      # 验收清单第 8 条的自动化部分：静默安装 → 启动安装好的游戏并开新游戏 → 静默卸载
+      - name: 安装、启动、卸载
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem apps/desktop/release/*-setup-x64.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP 'CloudseaInstall'
+          Start-Process $setup.FullName -ArgumentList '/S', "/D=$dir" -Wait
+          $exe = Join-Path $dir 'Cloudsea Spirit Gathering.exe'
+          if (-not (Test-Path $exe)) { throw "安装后找不到 $exe" }
+          $env:CLOUDSEA_INSTALLED_EXE = $exe
+          pnpm --filter @cloudsea/desktop exec playwright test tests/installed.spec.ts
+          if ($LASTEXITCODE -ne 0) { throw '安装后的游戏启动测试失败' }
+          $uninstaller = Get-ChildItem $dir -Filter 'Uninstall*.exe' | Select-Object -First 1
+          Start-Process $uninstaller.FullName -ArgumentList '/S' -Wait
+          # 卸载器会把自己复制到临时目录再运行，最多等 60 秒
+          for ($i = 0; $i -lt 60 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $exe) { throw '卸载后程序还在' }
+          Write-Host '安装、启动、卸载都通过'
       - uses: actions/upload-artifact@v5
         with:
           name: cloudsea-windows-installer
