@@ -18,3 +18,4 @@ export * from './wild';
 export * from './progress';
 export * from './keeperDraw';
 export * from './islandCode';
+export * from './achievements';

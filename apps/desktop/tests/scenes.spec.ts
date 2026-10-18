@@ -203,6 +203,17 @@ const SCENES: Record<string, (win: Page) => Promise<void>> = {
     await shot(win, 'share-c-team-battle');
     expect(await g<string>(win, 'Object.values(g.world().battles)[0].kind')).toBe('teamCode');
   },
+  achievements: async (win) => {
+    await win.waitForTimeout(300);
+    await shot(win, 'achievements-a-toast');
+    const got = await g<string[]>(win, 'g.world().characters.p1.achievements');
+    expect(got).toEqual(expect.arrayContaining(['firstFriend', 'firstLight', 'halfway', 'guardianNod']));
+    await win.keyboard.press('Tab');
+    await win.locator('#modal .btn', { hasText: '成就' }).click();
+    await win.waitForTimeout(200);
+    await shot(win, 'achievements-b-tab');
+    expect(await win.locator('#modal .achievement.done').count()).toBe(got.length);
+  },
   guardian: async (win) => {
     await win.waitForTimeout(600);
     await shot(win, 'guardian-a-explore');

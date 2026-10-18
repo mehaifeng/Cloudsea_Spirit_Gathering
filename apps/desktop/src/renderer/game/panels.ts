@@ -113,11 +113,12 @@ async function doAndRefresh(ctx: Ctx, intent: Intent, ok?: string): Promise<bool
 
 // =================================================================== 主菜单
 
-type Tab = 'spirits' | 'bag' | 'codex' | 'orders' | 'share' | 'net' | 'settings';
+type Tab = 'spirits' | 'bag' | 'codex' | 'achievements' | 'orders' | 'share' | 'net' | 'settings';
 const TABS: Array<[Tab, string]> = [
   ['spirits', '絮灵'],
   ['bag', '背包'],
   ['codex', '图鉴'],
+  ['achievements', '成就'],
   ['orders', '订单'],
   ['share', '分享'],
   ['net', '联机'],
@@ -128,7 +129,7 @@ export function openMenu(ctx: Ctx, tab: Tab = 'spirits'): void {
   let current = tab;
   const render = (): HTMLElement => {
     const tabs = h('div', { class: 'tabs' }, ...TABS.map(([id, label]) => button(label, () => ((current = id), ctx.ui.refresh(true)), { class: id === current ? 'selected' : '' })));
-    const body = current === 'spirits' ? spiritsTab(ctx) : current === 'bag' ? bagTab(ctx) : current === 'codex' ? codexTab(ctx) : current === 'orders' ? ordersTab(ctx) : current === 'net' ? netTab(ctx) : current === 'share' ? shareTab(ctx) : settingsTab(ctx);
+    const body = current === 'spirits' ? spiritsTab(ctx) : current === 'bag' ? bagTab(ctx) : current === 'codex' ? codexTab(ctx) : current === 'orders' ? ordersTab(ctx) : current === 'net' ? netTab(ctx) : current === 'share' ? shareTab(ctx) : current === 'achievements' ? achievementsTab(ctx) : settingsTab(ctx);
     return frame('菜单', ctx, tabs, body);
   };
   ctx.ui.openModal(render);
@@ -436,6 +437,26 @@ function settingsTab(ctx: Ctx): HTMLElement {
     spiritSection(ctx),
     h('h3', {}, '离开'),
     h('div', { class: 'row' }, button('存档并回到标题', () => void ctx.saveNow().then(() => ctx.quitToTitle()))),
+  );
+}
+
+/** 成就（M4-1）：已达成的亮着，没达成的灰着；隐藏成就达成前只显示问号。 */
+function achievementsTab(ctx: Ctx): HTMLElement {
+  const got = new Set(me(ctx).achievements);
+  const all = [...ctx.content.achievements.values()];
+  return h(
+    'div',
+    { class: 'col' },
+    h('div', { class: 'muted' }, `已达成 ${got.size} / ${all.length}。连着 Steam 时会同步到 Steam 成就。`),
+    h(
+      'div',
+      { class: 'achievements' },
+      ...all.map((a) => {
+        const done = got.has(a.id);
+        const secret = a.hidden && !done;
+        return h('div', { class: `achievement${done ? ' done' : ''}` }, h('span', { class: 'medal' }, done ? '✦' : '·'), h('div', { class: 'col', style: 'gap:2px' }, h('b', {}, secret ? '？？？' : a.name), h('span', { class: 'muted' }, secret ? '隐藏成就' : a.description)));
+      }),
+    ),
   );
 }
 

@@ -7,6 +7,7 @@ import { tickBattles } from './battleflow';
 import { homeIslandId } from './create';
 import { hasRoomForSpirit, tickHome } from './home';
 import { newId } from './ids';
+import { checkAchievements } from './achievements';
 import { expireSpiritRequests, planKeeperDay } from './keeper';
 import type { CharacterState, Order, WorldState } from './state';
 import { dayOf } from './time';
@@ -81,6 +82,7 @@ function tickSpirits(content: ContentDb, world: WorldState, c: CharacterState, d
       const home = world.homes[c.id];
       for (const b of Object.values(home?.buildings ?? {})) b.occupants = b.occupants.filter((id) => id !== s.id);
       events.push({ t: 'purified', playerId: c.id, spiritId: s.id });
+      c.stats.purified++;
     }
     if (next !== s) c.spirits[s.id] = next;
   }
@@ -116,5 +118,6 @@ export function advanceWorld(content: ContentDb, world: WorldState, dt: number):
     if (k.visiting && world.tick >= k.visiting.untilTick) k.visiting = null;
   }
   expireSpiritRequests(content, world, events);
+  checkAchievements(content, world, events);
   return events;
 }

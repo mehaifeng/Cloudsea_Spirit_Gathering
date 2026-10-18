@@ -30,7 +30,8 @@ export function createCharacter(content: ContentDb, o: { id: string; name: strin
     blueprints: [...content.buildings.values()].filter((b) => b.starterBlueprint).map((b) => b.id),
     nextSpiritSeq: 1,
     tutorial: { step: 0, done: false },
-    stats: { battlesWon: 0, caught: 0, bred: 0 },
+    stats: { battlesWon: 0, caught: 0, bred: 0, resonanceBred: 0, purified: 0, coopWins: 0, teamCodeWins: 0 },
+    achievements: [],
   };
 }
 

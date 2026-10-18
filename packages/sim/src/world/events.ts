@@ -19,6 +19,8 @@ export type WorldEvent =
   | { readonly t: 'npcLine'; readonly playerId: string; readonly speaker: string; readonly lines: readonly string[] }
   /** 五座灯塔全部重燃：终章（M3-2）。 */
   | { readonly t: 'finale'; readonly playerId: string }
+  /** 达成成就（M4-1）。 */
+  | { readonly t: 'achievement'; readonly playerId: string; readonly achievementId: string }
   /** 云主被打败，灯塔重燃（M2）。 */
   | { readonly t: 'lighthouseLit'; readonly playerId: string; readonly cloudlordId: string }
   /** 玩家加入 / 离开世界（M2）。 */

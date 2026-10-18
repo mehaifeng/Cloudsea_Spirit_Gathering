@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('cloudsea', {
       return () => ipcRenderer.removeListener(channel, fn);
     },
   },
+  /** Steam 成就（M4-1）：没有 Steam 时返回 false。 */
+  achievements: {
+    unlock: (apiName: string) => ipcRenderer.invoke('steam:achievement', apiName),
+  },
   /** 灵性模式（M3-4）：key 只能写进去、读不出来。 */
   llm: {
     get: () => ipcRenderer.invoke('llm:get'),

@@ -42,11 +42,11 @@ export class UiRoot {
     return this.modalOpen || this.dialogueOpen;
   }
 
-  toast(text: string, kind: 'info' | 'error' = 'info'): void {
-    const t = h('div', { class: `toast ${kind === 'error' ? 'error' : ''}` }, text);
+  toast(text: string, kind: 'info' | 'error' | 'achievement' = 'info'): void {
+    const t = h('div', { class: `toast ${kind === 'info' ? '' : kind}` }, text);
     this.toasts.append(t);
     while (this.toasts.children.length > 4) this.toasts.firstChild?.remove();
-    setTimeout(() => t.remove(), kind === 'error' ? 3200 : 2600);
+    setTimeout(() => t.remove(), kind === 'error' ? 3200 : kind === 'achievement' ? 4200 : 2600);
   }
 
   /** 打开模态窗口；render 每次刷新时重新调用（数据变了就 refresh()）。 */

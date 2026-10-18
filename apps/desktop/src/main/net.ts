@@ -22,6 +22,11 @@ type Win = () => BrowserWindow | null;
 
 type SteamClient = ReturnType<typeof import('steamworks.js').init>;
 let steam: SteamClient | null = null;
+
+/** 其他主进程模块（成就、云存档）用的 Steam 客户端；没连上时是 null。 */
+export function steamClient(): SteamClient | null {
+  return steam;
+}
 let steamError: string | null = null;
 
 function initSteam(win: Win): void {

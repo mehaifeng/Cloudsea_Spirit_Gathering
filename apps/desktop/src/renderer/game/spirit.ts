@@ -48,3 +48,8 @@ export function rememberBlocked(text: string): void {
     /* 存不下也不影响这一局 */
   }
 }
+
+/** Steam 成就（M4-1）：桌面版才有；没有 Steam 时主进程返回 false。 */
+export function achievementBridge(): { unlock(apiName: string): Promise<boolean> } | null {
+  return (window as unknown as { cloudsea?: { achievements?: { unlock(apiName: string): Promise<boolean> } } }).cloudsea?.achievements ?? null;
+}

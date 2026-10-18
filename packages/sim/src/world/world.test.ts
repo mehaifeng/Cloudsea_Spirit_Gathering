@@ -570,7 +570,7 @@ describe('存档', () => {
     delete sp['condition'];
     const v2 = { kind: 'cloudsea-character', version: 2, character: { ...c0, version: 2, spirits: { x1: sp } } };
     const c = loadCharacter(JSON.parse(JSON.stringify(v2)));
-    expect(c.version).toBe(3);
+    expect(c.version).toBe(4);
     expect(c.spirits['x1']!.condition).toBeNull();
     expect('weary' in c.spirits['x1']!).toBe(false);
   });
@@ -582,7 +582,7 @@ describe('存档', () => {
       character: { ...createCharacter(content, { id: 'p9', name: '旧档' }), version: 1, tools: { lantern: 2, sail: 3, gatherTool: 1 }, seenCutscenes: undefined, tutorial: { step: 6, done: true } },
     };
     const c = loadCharacter(JSON.parse(JSON.stringify(v1)));
-    expect(c.version).toBe(3);
+    expect(c.version).toBe(4);
     expect(c.tools).toEqual({ lantern: 2, skiff: 3, gatherTool: 1 });
     expect(c.seenCutscenes).toEqual(['opening']);
   });

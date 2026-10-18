@@ -8,7 +8,7 @@ import type { CharacterState, PlayerRuntime, WorldState } from './state';
  * 结构变更时：版本号 +1，在 MIGRATIONS 里加一条从旧版本升级的函数，并补测试。
  */
 export const WORLD_SAVE_VERSION = 6;
-export const CHARACTER_SAVE_VERSION = 3;
+export const CHARACTER_SAVE_VERSION = 4;
 
 export interface WorldSaveFile {
   readonly kind: 'cloudsea-world';
@@ -110,6 +110,12 @@ export const CHARACTER_MIGRATIONS: Readonly<Record<number, Migration>> = {
       spirits[id] = { ...rest, condition: null };
     }
     return { ...data, character: { ...c, version: 3, spirits } };
+  },
+  /** v3 → v4（M4-1）：成就与新的统计计数。已有的成就由房主读档后按条件补发。 */
+  3: (data) => {
+    const c = { ...(data['character'] as Record<string, unknown>) };
+    const stats = { resonanceBred: 0, purified: 0, coopWins: 0, teamCodeWins: 0, ...((c['stats'] ?? {}) as Record<string, number>) };
+    return { ...data, character: { ...c, version: 4, stats, achievements: (c['achievements'] as string[] | undefined) ?? [] } };
   },
 };
 

@@ -1,4 +1,4 @@
-import { ECONOMY, getContent, REGION_NAME, REGIONS } from '@cloudsea/content';
+import { ECONOMY, getContent, REGION_NAME, REGIONS, steamName } from '@cloudsea/content';
 import type { ClientTransport } from '@cloudsea/net';
 import { createCharacter as newCharacter, loadCharacter } from '@cloudsea/sim';
 import {
@@ -32,7 +32,7 @@ import { Hud } from './hud';
 import { Input } from './input';
 import { openBuilding, openCore, openDock, openKeeper, openMenu, openSpirit, openStarChart, type Ctx } from './panels';
 import { saveBackend } from './saves';
-import { loadBlockedLines, rememberBlocked } from './spirit';
+import { achievementBridge, loadBlockedLines, rememberBlocked } from './spirit';
 import { isBlocked } from '@cloudsea/ai';
 import { characterStore, GameSession, newCharacterId, PLAYER_ID } from './session';
 import { ipcClientTransport, netBridge } from './netTransports';
@@ -344,6 +344,8 @@ export class App {
     this.world = session.client.world;
     this.enterExplore();
     void session.save();
+    // 成就同步到 Steam（换了电脑、离线时解锁的都补上；重复解锁无害）
+    for (const id of this.world?.characters[PLAYER_ID]?.achievements ?? []) void achievementBridge()?.unlock(steamName(id));
     // 开场播片（新角色第一次进入）
     const c = this.world?.characters[PLAYER_ID];
     if (c && this.explore && !c.tutorial.done && c.tutorial.step === 0) this.playCutscene('opening', openingShots(this.explore), () => {});
@@ -778,6 +780,12 @@ export class App {
           if (next) lines.push(`远处，${REGION_NAME[next]}方向的浓雾也薄了一些——星图上能看到那边的岛了。`);
           const finale = events.some((x) => x.t === 'finale' && x.playerId === PLAYER_ID);
           this.ui.say('灯塔', lines, '灯塔重燃', finale ? () => this.playFinale() : undefined);
+          break;
+        }
+        case 'achievement': {
+          const a = this.content.achievements.get(e.achievementId);
+          if (a) this.ui.toast(`成就达成：${a.name}`, 'achievement');
+          void achievementBridge()?.unlock(steamName(e.achievementId));
           break;
         }
         case 'npcLine':

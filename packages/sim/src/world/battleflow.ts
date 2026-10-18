@@ -567,6 +567,8 @@ export function finishBattle(content: ContentDb, world: WorldState, b: ActiveBat
     for (const pid of members) {
       const c = world.characters[pid]!;
       c.stats.battlesWon++;
+      if (members.length > 1) c.stats.coopWins++;
+      if (b.kind === 'teamCode') c.stats.teamCodeWins++;
       if (shells > 0) {
         c.shells += shells;
         events.push({ t: 'shells', playerId: c.id, delta: shells });

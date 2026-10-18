@@ -1,3 +1,4 @@
+import { checkAchievements } from './achievements';
 import { islandKeeper } from './keeperDraw';
 import {
   BLUEPRINT_SHOP,
@@ -136,7 +137,11 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
   const p = world.players[playerId];
   if (!c || !p) return { ok: false, error: '玩家不在这个世界里', events };
   const fail = (error: string): IntentResult => ({ ok: false, error, events: [] });
-  const ok = (): IntentResult => ({ ok: true, events });
+  const ok = (): IntentResult => {
+    // 成就（M4-1）：意图生效后立刻检查，免得等下一个 tick
+    checkAchievements(content, world, events);
+    return { ok: true, events };
+  };
   const home = world.homes[playerId]!;
   const inBattle = p.battleId !== null;
   // 航行中只能做与航行无关的少数几件事
@@ -431,6 +436,7 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
       c.spirits[r.egg.id] = r.egg;
       b.eggId = r.egg.id;
       c.stats.bred++;
+      if (r.father.genes.lineId !== r.mother.genes.lineId) c.stats.resonanceBred++;
       events.push({ t: 'shells', playerId, delta: -ECONOMY.breedShells });
       return ok();
     }

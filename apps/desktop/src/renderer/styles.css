@@ -246,3 +246,9 @@ body:has(#dialogue:not(.hidden)) #hints { display: none; }
 /* 分享码（M3-5） */
 .code-box { width: 100%; font: 14px/1.5 ui-monospace, Menlo, monospace; padding: 6px 10px; border: 1.5px solid var(--ink); border-radius: var(--wobble-sm); background: var(--paper); color: var(--ink); resize: vertical; box-sizing: border-box; }
 #visit-panel { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; padding: 8px 16px; }
+/* 成就（M4-1） */
+.achievements { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.achievement { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border: 1.5px dashed rgba(60, 50, 40, .35); border-radius: var(--wobble-sm); opacity: .6; }
+.achievement.done { border-style: solid; border-color: var(--ink); background: #fff6d8; opacity: 1; }
+.achievement .medal { font-size: 22px; width: 24px; text-align: center; color: #c9962f; }
+.toast.achievement { background: #fff3c4; border-color: #c9962f; font-weight: 600; }

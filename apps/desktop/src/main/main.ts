@@ -1,7 +1,7 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { join } from 'node:path';
 import { registerLlmIpc } from './llm';
-import { registerNetIpc } from './net';
+import { registerNetIpc, steamClient } from './net';
 import { registerSaveIpc } from './saves';
 
 // 开发时由 scripts/dev.mjs 注入；打包后加载本地文件
@@ -66,6 +66,15 @@ void app.whenReady().then(() => {
   registerSaveIpc();
   registerNetIpc(() => mainWindow);
   registerLlmIpc();
+  // 成就（M4-1）：渲染进程拿到 sim 的成就事件后转给 Steam；没有 Steam 时静默
+  ipcMain.handle('steam:achievement', (_e, apiName: string) => {
+    if (typeof apiName !== 'string' || !/^ACH_[A-Z0-9_]{1,60}$/.test(apiName)) return false;
+    try {
+      return steamClient()?.achievement.activate(apiName) ?? false;
+    } catch {
+      return false;
+    }
+  });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

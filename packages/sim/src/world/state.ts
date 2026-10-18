@@ -35,7 +35,9 @@ export interface CharacterState {
   tutorial: { step: number; done: boolean };
   /** 看过的一次性播片（开场、首次遭遇、登岛定场、初见守岛人……），v2 新增。 */
   seenCutscenes: string[];
-  stats: { battlesWon: number; caught: number; bred: number };
+  stats: { battlesWon: number; caught: number; bred: number; resonanceBred: number; purified: number; coopWins: number; teamCodeWins: number };
+  /** 已达成的成就 id（M4-1）。 */
+  achievements: string[];
 }
 
 /** 玩家在世界里的位置（世界存档里按玩家 id 保存）。 */

@@ -207,6 +207,12 @@ export const SCENARIOS: Record<string, { readonly desc: string; run(h: ScenarioH
       });
     },
   },
+  achievements: {
+    desc: '成就：三座灯塔已重燃的存档，读进来就补发成就（spec 里打开成就页）',
+    run: async (h) => {
+      await home(h, lateGame(3));
+    },
+  },
   guardian: {
     desc: '灯塔会守卫站在晴原灯塔下的路边（spec 里再挑战他）',
     run: async (h) => {

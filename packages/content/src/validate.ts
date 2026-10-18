@@ -5,6 +5,8 @@ import { BLUEPRINT_SHOP, coreUpgradeCost, ORDER_TEMPLATES, toolUpgradeCost } fro
 import { ISLANDS } from './data/islands';
 import { ITEMS } from './data/items';
 import { DIALOGUE, KEEPERS } from './data/keepers';
+import { ACHIEVEMENTS } from './data/achievements';
+import { achievementSchema, type Achievement, type AchievementInput } from './achievements';
 import { CLOUDLORDS } from './data/cloudlords';
 import { cloudlordSchema, type Cloudlord, type CloudlordInput } from './cloudlords';
 import { LINES } from './data/lines';
@@ -28,6 +30,7 @@ export interface RawContent {
   readonly crops?: readonly Crop[];
   readonly islands?: readonly IslandInput[];
   readonly keepers?: readonly KeeperInput[];
+  readonly achievements?: readonly AchievementInput[];
   readonly dialogue?: readonly DialogueLine[];
   readonly cloudlords?: readonly CloudlordInput[];
 }
@@ -54,6 +57,7 @@ export interface ContentDb {
   readonly crops: ReadonlyMap<string, Crop>;
   readonly islands: ReadonlyMap<string, Island>;
   readonly keepers: ReadonlyMap<string, Keeper>;
+  readonly achievements: ReadonlyMap<string, Achievement>;
   readonly dialogue: readonly DialogueLine[];
   readonly cloudlords: ReadonlyMap<string, Cloudlord>;
 }
@@ -148,6 +152,7 @@ export function buildContent(raw: RawContent): ContentDb {
   const crops = indexById('crop', parseAll('crop', cropSchema, raw.crops ?? []), issues);
   const islands = indexById('island', parseAll('island', islandSchema, raw.islands ?? []), issues);
   const keepers = indexById('keeper', parseAll('keeper', keeperSchema, raw.keepers ?? []), issues);
+  const achievements = indexById('achievement', parseAll('achievement', achievementSchema, raw.achievements ?? []), issues);
   const dialogue = parseAll('dialogue', dialogueLineSchema, raw.dialogue ?? []);
 
   if (raw.items) {
@@ -243,6 +248,7 @@ export function buildContent(raw: RawContent): ContentDb {
     crops,
     islands,
     keepers,
+    achievements,
     dialogue,
     cloudlords,
   };
@@ -271,6 +277,7 @@ export function getContent(): ContentDb {
     crops: CROPS,
     islands: ISLANDS,
     keepers: KEEPERS,
+    achievements: ACHIEVEMENTS,
     dialogue: DIALOGUE,
     cloudlords: CLOUDLORDS,
   });
