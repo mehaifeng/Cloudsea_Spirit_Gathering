@@ -145,6 +145,9 @@ export class UiRoot {
     for (let i = 0; i < 200 && this.dialogueOpen; i++) this.advanceDialogue();
   }
 
+  /** 没开菜单时可以用方向键 / 十字键导航的界面（战斗面板、标题画面，M4-2）；由 App 提供。 */
+  navRoot: () => HTMLElement | null = () => null;
+
   private onKey(e: KeyboardEvent): void {
     if (this.dialogueOpen) {
       if (e.key === 'Enter' || e.key === ' ' || e.key === 'e' || e.key === 'E' || e.key === 'Escape') {
@@ -154,7 +157,22 @@ export class UiRoot {
       }
       return;
     }
-    if (!this.modalOpen) return;
+    if (!this.modalOpen) {
+      const root = this.navRoot();
+      const nav = root ? keyToNav(e) : null;
+      if (!root || !nav) return;
+      if ((e.target as HTMLElement | null)?.tagName === 'INPUT' && nav !== 'confirm') return;
+      e.preventDefault();
+      e.stopPropagation();
+      const inside = document.activeElement instanceof HTMLElement && root.contains(document.activeElement);
+      if (nav === 'confirm') {
+        if (inside) (document.activeElement as HTMLElement).click();
+        else focusFirst(root);
+      } else if (nav === 'back') {
+        [...root.querySelectorAll<HTMLElement>('.btn')].find((b) => /^返回/.test(b.textContent ?? ''))?.click();
+      } else moveFocus(root, nav);
+      return;
+    }
     const target = e.target as HTMLElement | null;
     if (target?.tagName === 'INPUT' && e.key !== 'Escape' && e.key !== 'Enter') return;
     const nav = keyToNav(e);

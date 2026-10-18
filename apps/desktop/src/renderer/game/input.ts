@@ -15,6 +15,18 @@ export class Input {
   rightClicked = false;
   private downAt = { x: 0, y: 0, t: 0 };
 
+  /** 手柄的模拟量（M4-2）：每帧由 GamepadInput 写入。 */
+  private pad: { move: { x: number; y: number }; look: { x: number; y: number }; zoom: number; run: boolean } | null = null;
+
+  setPad(pad: Input['pad']): void {
+    this.pad = pad;
+    if (pad) {
+      this.dragDX += pad.look.x * 9;
+      this.dragDY += pad.look.y * 6;
+      this.wheel -= pad.zoom * 14;
+    }
+  }
+
   constructor(private readonly canvas: HTMLCanvasElement, private readonly blocked: () => boolean) {
     window.addEventListener('keydown', (e) => {
       if (this.blocked()) return;
@@ -87,10 +99,14 @@ export class Input {
 
   axis(): { x: number; y: number; run: boolean } {
     const k = this.keys;
+    const kx = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+    const ky = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
+    const p = this.pad;
+    // 手柄摇杆是模拟量：推一半就走一半的速度
     return {
-      x: (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0),
-      y: (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0),
-      run: k.has('ShiftLeft') || k.has('ShiftRight'),
+      x: kx || (p?.move.x ?? 0),
+      y: ky || (p?.move.y ?? 0),
+      run: k.has('ShiftLeft') || k.has('ShiftRight') || !!p?.run,
     };
   }
 }

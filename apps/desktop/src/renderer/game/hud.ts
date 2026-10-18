@@ -9,6 +9,8 @@ import type { UiRoot } from './uiRoot';
 export class Hud {
   private lastKey = '';
   private lastPrompt = '';
+  /** 最近用的是手柄：提示里显示手柄按键（M4-2）。 */
+  pad = false;
   private readonly plates = h('div', { id: 'nameplates' });
   private readonly plateEls = new Map<string, HTMLElement>();
 
@@ -51,7 +53,7 @@ export class Hud {
     const clock = clockAt(world.tick);
     const weather = weatherAt(world.seed, island?.region ?? 'sunPlains', world.tick);
     const placeName = p.islandId === homeIslandId(PLAYER_ID) ? `${c.name}的家园岛` : island?.name ?? '';
-    const key = [clock.day, formatClock(clock), weather, placeName, c.shells, c.backpack['lanternFuel'] ?? 0, c.backpack['lanternDew'] ?? 0, mode, world.paused, JSON.stringify(c.party.map((id) => [c.spirits[id]?.level, c.spirits[id]?.condition?.hp, c.spirits[id]?.formId]))].join('|');
+    const key = [clock.day, formatClock(clock), weather, placeName, c.shells, c.backpack['lanternFuel'] ?? 0, c.backpack['lanternDew'] ?? 0, mode, world.paused, this.pad, JSON.stringify(c.party.map((id) => [c.spirits[id]?.level, c.spirits[id]?.condition?.hp, c.spirits[id]?.formId]))].join('|');
     if (key !== this.lastKey) {
       this.lastKey = key;
       clear(this.ui.hudTL);
@@ -90,8 +92,11 @@ export class Hud {
           this.ui.partyBar.append(badge);
         }
       }
-      this.ui.hints.textContent =
-        mode === 'build'
+      this.ui.hints.textContent = this.pad
+        ? mode === 'battle'
+          ? '十字键选择 · Ⓐ 确认 · Ⓑ 返回'
+          : '左摇杆 移动（推到底跑） · 右摇杆 转视角 · LT/RT 远近 · Ⓐ 交互 · Ⓧ 跳 · Ⓨ 菜单 · Select 星图'
+        : mode === 'build'
           ? '鼠标选位置 · 点击放置 · R 旋转 · Esc / 右键退出'
           : mode === 'battle'
             ? '方向键选择 · Enter 确认 · Esc 返回'
@@ -99,10 +104,10 @@ export class Hud {
       this.ui.hints.classList.toggle('hidden', false);
     }
     const prompt = mode === 'explore' && nearest ? nearest.label : '';
-    if (prompt !== this.lastPrompt) {
-      this.lastPrompt = prompt;
+    if (`${prompt}|${this.pad}` !== this.lastPrompt) {
+      this.lastPrompt = `${prompt}|${this.pad}`;
       clear(this.ui.prompt);
-      if (prompt) this.ui.prompt.append(h('span', { class: 'hud-chip' }, h('kbd', {}, 'E'), prompt));
+      if (prompt) this.ui.prompt.append(h('span', { class: 'hud-chip' }, h('kbd', {}, this.pad ? 'Ⓐ' : 'E'), prompt));
     }
   }
 

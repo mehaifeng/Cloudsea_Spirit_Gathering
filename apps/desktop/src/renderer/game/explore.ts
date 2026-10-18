@@ -488,6 +488,10 @@ export class ExploreView {
     if (this.skiff) this.skiff.view.group.visible = visible;
   }
 
+  cameraState(): { yaw: number; pitch: number; dist: number } {
+    return { yaw: this.camYaw, pitch: this.camPitch, dist: this.camDist };
+  }
+
   keeperView(id: string): HumanoidView | undefined {
     return this.keepers.get(id);
   }

@@ -29,6 +29,7 @@ import { arrivalPoint, CLOUDLORD_SPOT, HOME_DOCK } from '@cloudsea/sim';
 import { BuildMode } from './build';
 import { ExploreView, type Interactable } from './explore';
 import { Hud } from './hud';
+import { GamepadInput, type PadContext } from './gamepad';
 import { Input } from './input';
 import { openBuilding, openCore, openDock, openKeeper, openMenu, openSpirit, openStarChart, type Ctx } from './panels';
 import { saveBackend } from './saves';
@@ -95,6 +96,7 @@ class TitleScene {
 export class App {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly camera = new THREE.PerspectiveCamera(50, 1, 0.1, 900);
+  private readonly gamepad: GamepadInput;
   private readonly ui: UiRoot;
   private readonly input: Input;
   private readonly hud: Hud;
@@ -174,6 +176,12 @@ export class App {
       },
     };
     loadBlockedLines();
+    this.gamepad = new GamepadInput(this.input, () => this.padContext());
+    this.ui.navRoot = () => {
+      if (this.mode === 'battle') return this.ui.layer.querySelector<HTMLElement>('#battle-ui');
+      if (this.mode === 'title') return this.titleEl;
+      return null;
+    };
     this.hud.onPartyClick = (id) => {
       if (this.mode === 'explore' && !this.ui.capturing) openSpirit(this.ctx, id);
     };
@@ -971,15 +979,28 @@ export class App {
         this.frozen = on;
       },
       cutsceneTime: () => this.cutscene?.elapsed ?? null,
+      /** 镜头（手柄测试用，M4-2）。 */
+      camera: () => (this.explore ? this.explore.cameraState() : null),
     };
   }
 
   // ---------------------------------------------------------------- 主循环
 
 
+  /** 手柄按键在当前画面的含义（M4-2）。 */
+  private padContext(): PadContext {
+    if (this.ui.dialogueOpen || this.ui.modalOpen || this.mode === 'battle' || this.mode === 'title' || this.mode === 'visit') return 'ui';
+    if (this.mode === 'explore') return 'explore';
+    if (this.mode === 'voyage') return 'voyage';
+    if (this.mode === 'build') return 'build';
+    return 'none';
+  }
+
   private frame(now: number): void {
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
+    this.gamepad.update(dt);
+    this.hud.pad = this.gamepad.active;
     if (!this.frozen) this.step(dt);
     this.render();
     this.input.endFrame();
@@ -1006,7 +1027,7 @@ export class App {
       this.hud.nameplates(this.mode === 'explore' ? this.explore.nameplates().map((n) => ({ ...n, screen: this.explore!.project(n.pos, innerWidth, innerHeight) })) : []);
       this.tutorial?.update(this.world, this.explore);
     } else if (this.mode === 'visit') {
-      if (input.hit('Escape')) this.endVisit();
+      if (input.hit('Escape') || input.hit('Enter')) this.endVisit();
     } else if ((this.mode === 'boarding' || this.mode === 'landing') && this.explore) {
       this.explore.update(dt, null, (x, z, yaw) => this.session?.client.fire({ type: 'move', x, z, yaw }), false);
     } else if (this.mode === 'transition' && this.explore) {

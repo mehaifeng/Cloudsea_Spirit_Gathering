@@ -63,7 +63,8 @@ export function moveFocus(root: Element, dir: 'up' | 'down' | 'left' | 'right'):
   return best;
 }
 
+/** 聚焦第一个可操作的元素；“关闭”按钮（.close-x）排在最后，免得手柄一打开菜单就停在右上角（M4-2）。 */
 export function focusFirst(root: Element): void {
   const items = focusables(root);
-  items[0]?.focus();
+  (items.find((el) => !el.classList.contains('close-x')) ?? items[0])?.focus();
 }
