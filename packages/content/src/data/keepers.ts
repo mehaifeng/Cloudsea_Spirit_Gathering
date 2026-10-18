@@ -1,10 +1,18 @@
 import type { DialogueLine, KeeperInput } from '../keepers';
+import * as mistSea from './keepers/mistSea';
+import * as rainMarsh from './keepers/rainMarsh';
+import * as sunPlains from './keepers/sunPlains';
+import * as thunderCliff from './keepers/thunderCliff';
+import * as windValley from './keepers/windValley';
 
-/** M1 的 2 位守岛人（DESIGN 11）。 */
-export const KEEPERS: readonly KeeperInput[] = [
+const REGION_FILES = [sunPlains, windValley, rainMarsh, thunderCliff, mistSea];
+
+/** M1 的 2 位守岛人（DESIGN 11）；M3-3 起各区人设池在 keepers/ 下。 */
+const M1_KEEPERS: readonly KeeperInput[] = [
   {
     id: 'aHe',
     name: '阿禾',
+    region: 'sunPlains',
     appearance: { skinTone: '#E8C3A0', hairColor: '#5B4636', clothColor: '#C9A65A', scarfColor: '#E07A5F', height: 0.97 },
     personality: ['温和', '慢性子', '念旧', '爱照顾人'],
     speechStyle: '说话慢，爱用“咱们”，常提起以前的麦田；句子短，带一点乡音。',
@@ -66,6 +74,7 @@ export const KEEPERS: readonly KeeperInput[] = [
   {
     id: 'lan',
     name: '岚',
+    region: 'sunPlains',
     appearance: { skinTone: '#F0CFB0', hairColor: '#2E3A4F', clothColor: '#5CC8A0', scarfColor: '#F3B94D', height: 1.03 },
     personality: ['好胜', '直爽', '闲不住', '嘴硬心软'],
     speechStyle: '语速快，爱用短句和反问，喜欢下战书；不服输，但输了会认真夸对方。',
@@ -138,7 +147,7 @@ const L = (keeper: string, situation: DialogueLine['situation'], text: string, m
   ...(maxAffinity !== undefined ? { maxAffinity } : {}),
 });
 
-export const DIALOGUE: readonly DialogueLine[] = [
+const M1_DIALOGUE: readonly DialogueLine[] = [
   // ---------------- 阿禾 ----------------
   L('aHe', 'greeting', '哟，来啦。路上风大不大？', 0, 1),
   L('aHe', 'greeting', '是新来的守岛人吧？咱们离得近，常来坐坐。', 0, 1),
@@ -218,3 +227,6 @@ export const DIALOGUE: readonly DialogueLine[] = [
   L('lan', 'aboutIsland', '风铃都是我捡来的，每一个响声都不一样。'),
   L('lan', 'aboutIsland', '岛小，但风好。这就够了。', 1),
 ];
+
+export const KEEPERS: readonly KeeperInput[] = [...M1_KEEPERS, ...REGION_FILES.flatMap((f) => f.KEEPERS)];
+export const DIALOGUE: readonly DialogueLine[] = [...M1_DIALOGUE, ...REGION_FILES.flatMap((f) => f.DIALOGUE)];

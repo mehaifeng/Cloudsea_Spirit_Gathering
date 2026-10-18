@@ -180,8 +180,10 @@ export function buildContent(raw: RawContent): ContentDb {
     for (const tool of ['lantern', 'skiff', 'gatherTool'] as const) for (const st of toolUpgradeCost(tool, 1).items) needItem(`tool ${tool}`, st.item);
 
     for (const isl of islands.values()) {
-      if ((isl.kind === 'keeper') !== !!isl.keeper) issues.push(`island ${isl.id}: 守岛人岛必须（且只有它）指定守岛人`);
+      // 守岛人岛：指定了守岛人 = 固定住户；没指定 = 空位，新世界从本区人设池抽人（M3-3）
+      if (isl.keeper && isl.kind !== 'keeper') issues.push(`island ${isl.id}: 只有守岛人岛能指定守岛人`);
       if (isl.keeper && !keepers.has(isl.keeper)) issues.push(`island ${isl.id}: 守岛人 ${isl.keeper} 不存在`);
+      if (isl.keeper && keepers.get(isl.keeper)?.region !== isl.region) issues.push(`island ${isl.id}: 守岛人 ${isl.keeper} 不是本区的`);
       if (isl.wildLevel.min > isl.wildLevel.max) issues.push(`island ${isl.id}: 野生等级范围无效`);
     }
     for (const k of keepers.values()) {
@@ -194,11 +196,20 @@ export function buildContent(raw: RawContent): ContentDb {
         for (const st of n.reward?.items ?? []) needItem(`keeper ${k.id} story`, st.item);
         if (n.reward?.blueprint && !buildings.has(n.reward.blueprint)) issues.push(`keeper ${k.id}: 蓝图 ${n.reward.blueprint} 不存在`);
       }
+      // 每个情境在每个好感等级（0–5）都要有能说的话（M3-3：好感分 3 档写）
       for (const sit of SITUATIONS) {
-        if (!dialogue.some((d) => d.keeper === k.id && d.situation === sit)) issues.push(`keeper ${k.id}: 情境 ${sit} 没有对话`);
+        for (let lv = 0; lv <= 5; lv++) {
+          if (!dialogue.some((d) => d.keeper === k.id && d.situation === sit && (d.minAffinity ?? 0) <= lv && lv <= (d.maxAffinity ?? 5))) {
+            issues.push(`keeper ${k.id}: 情境 ${sit} 在好感 ${lv} 级没有对话`);
+            break;
+          }
+        }
       }
     }
-    for (const d of dialogue) if (!keepers.has(d.keeper)) issues.push(`dialogue: 守岛人 ${d.keeper} 不存在`);
+    for (const d of dialogue) {
+      if (!keepers.has(d.keeper)) issues.push(`dialogue: 守岛人 ${d.keeper} 不存在`);
+      if ((d.minAffinity ?? 0) > (d.maxAffinity ?? 5)) issues.push(`dialogue ${d.keeper}/${d.situation}: 好感区间无效`);
+    }
   }
   // 云主：引用的岛、进化线、形态、招式都要存在；灯塔岛与云主一一对应
   const cloudlords = indexById('cloudlord', parseAll('cloudlord', cloudlordSchema, raw.cloudlords ?? []), issues);

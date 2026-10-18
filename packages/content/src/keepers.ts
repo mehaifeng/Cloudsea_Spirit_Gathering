@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { elementSchema } from './elements';
+import { regionSchema } from './species';
 
 /** 守岛人对话的情境标签（DESIGN 11.5）。M1 的核心集合。 */
 export const SITUATIONS = [
@@ -53,6 +54,8 @@ const storyNodeSchema = z.strictObject({
 export const keeperSchema = z.strictObject({
   id: z.string().regex(/^[a-z][A-Za-z0-9]*$/),
   name: z.string().min(1).max(6),
+  /** 所在大区（M3-3）：新世界从各区的人设池里按种子抽人住进本区的守岛人岛。 */
+  region: regionSchema,
   /** 外观参数（render 用）。 */
   appearance: z.strictObject({
     skinTone: z.string(),
