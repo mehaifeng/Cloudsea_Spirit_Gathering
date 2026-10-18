@@ -148,6 +148,31 @@ describe('主线进度（M3-2）', () => {
     expect(finale).toBe(true);
   });
 
+  it('五位云主逐一换阶段：生命降到 66% / 33% 以下时换成本阶段的招式、喊出本阶段的台词，第二阶段力量 +2', () => {
+    for (const cl of content.cloudlords.values()) {
+      const w = world(60);
+      const r = REGIONS.indexOf(cl.region);
+      for (const prev of REGIONS.slice(0, r)) w.lighthousesLit.push([...content.cloudlords.values()].find((c) => c.region === prev)!.id);
+      w.guardiansBeaten.push(cl.id);
+      act(w, { type: 'sail', islandId: cl.island });
+      act(w, { type: 'move', x: CLOUDLORD_SPOT.x, z: CLOUDLORD_SPOT.z + 2, yaw: 0 });
+      act(w, { type: 'challengeCloudlord', cloudlordId: cl.id });
+      const id = w.players['p1']!.battleId!;
+      const guardAll = (): SideActions => Object.fromEntries(activeUnits(w.battles[id]!.state, 0).map(({ slot }) => [slot, { type: 'skill', skillId: 'guard' } as BattleAction]));
+      const boss = () => w.battles[id]!.state.sides[1].units[0]!;
+      expect(boss().phases.map((p) => p.hpBelow), cl.id).toEqual(cl.phases.map((p) => p.hpBelow));
+      cl.phases.forEach((ph, i) => {
+        boss().hp = Math.floor(boss().maxHp * ph.hpBelow) - 1;
+        const ev = act(w, { type: 'battleActions', battleId: id, actions: guardAll() });
+        const turn = ev.filter((e) => e.t === 'battleTurn').flatMap((e) => (e as Extract<WorldEvent, { t: 'battleTurn' }>).events);
+        const phase = turn.find((x) => x.t === 'phase') as { phase: number; line: string } | undefined;
+        expect(phase, `${cl.id} 第 ${i + 2} 阶段`).toMatchObject({ phase: i + 1, line: ph.line });
+        expect(boss().skills, `${cl.id} 第 ${i + 2} 阶段招式`).toEqual(ph.skills);
+        for (const st of ph.stages ?? []) expect(boss().stages[st.stat], `${cl.id} ${st.stat}`).toBeGreaterThanOrEqual(st.delta);
+      });
+    }
+  });
+
   it('世界存档 v4 → v5：补上灯塔守卫；已经重燃的灯塔视为守卫打赢了', () => {
     const w = world();
     w.lighthousesLit.push('sunPlainsLord');
