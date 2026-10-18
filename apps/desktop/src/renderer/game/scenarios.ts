@@ -1,4 +1,5 @@
-import { homeTerrain, WATER_LEVEL, type Intent, type WorldState } from '@cloudsea/sim';
+import { getContent, REGIONS } from '@cloudsea/content';
+import { GUARDIAN_SPOT, homeTerrain, makeSpirit, WATER_LEVEL, type Intent, type WorldState } from '@cloudsea/sim';
 
 /**
  * 测试模式的“场景直达”（DESIGN v0.6，开发用）：
@@ -7,7 +8,8 @@ import { homeTerrain, WATER_LEVEL, type Intent, type WorldState } from '@cloudse
  * 和测试钩子一样，场景只通过意图改世界（不直接改状态）。
  */
 export interface ScenarioHost {
-  newGame(): Promise<void>;
+  /** prep：开局前整理世界（等同读一份做好的存档），之后只走意图。 */
+  newGame(prep?: (world: WorldState) => void): Promise<void>;
   act(intent: Intent): Promise<{ ok: boolean; error?: string }>;
   world(): Readonly<WorldState>;
   mode(): string;
@@ -34,8 +36,8 @@ async function until(cond: () => boolean, ms = 8000): Promise<boolean> {
 }
 
 /** 新游戏 → 跳过开场 → 领到第一只伙伴 → 引导完成，站在岛核前（白天）。 */
-async function home(h: ScenarioHost): Promise<void> {
-  await h.newGame();
+async function home(h: ScenarioHost, prep?: (world: WorldState) => void): Promise<void> {
+  await h.newGame(prep);
   await until(() => h.mode() === 'cutscene', 2000);
   h.skipCutscene();
   h.closeDialogues();
@@ -59,6 +61,37 @@ function deepestWater(w: Readonly<WorldState>): { x: number; z: number; depth: n
     }
   }
   return best;
+}
+
+/**
+ * 后期存档（M3-2）：前 lit 个大区的灯塔已经重燃、守卫都打赢了；
+ * 带一队与该进度相称的絮灵，提灯 / 云舟满级、燃料充足。
+ */
+function lateGame(lit: number, guardians = lit): (w: WorldState) => void {
+  return (w) => {
+    const content = getContent();
+    const lords = REGIONS.map((r) => [...content.cloudlords.values()].find((c) => c.region === r)!.id);
+    w.lighthousesLit.push(...lords.slice(0, lit));
+    w.guardiansBeaten.push(...lords.slice(0, guardians));
+    w.chapter = lit + 1;
+    const c = w.characters['p1']!;
+    const level = Math.min(60, 14 + lit * 10);
+    ['warmbud', 'gustmoth', 'lilypad'].forEach((line, k) => {
+      const s = makeSpirit(content, line, level, { id: `p1-late${k}`, owner: 'p1', talents: 24, formIndex: level >= 30 ? 2 : 1 });
+      c.spirits[s.id] = { ...s, state: 'party' };
+      c.party.push(s.id);
+    });
+    c.tools = { ...c.tools, lantern: 5, skiff: 5 };
+    c.backpack['lanternFuel'] = 40;
+    c.shells = 3000;
+  };
+}
+
+async function sailTo(h: ScenarioHost, islandId: string): Promise<void> {
+  await h.sail(islandId);
+  await until(() => h.mode() === 'explore' && h.world().players['p1']!.islandId === islandId, 40000);
+  h.skipCutscene();
+  h.closeDialogues();
 }
 
 export const SCENARIOS: Record<string, { readonly desc: string; run(h: ScenarioHost): Promise<void> }> = {
@@ -152,10 +185,32 @@ export const SCENARIOS: Record<string, { readonly desc: string; run(h: ScenarioH
       h.advance(0.5);
     },
   },
+  chart: {
+    desc: '星图：晴原、风谷已重燃，雨泽开放，雷崖、雾海还在浓雾里（spec 里逐个翻页截图）',
+    run: async (h) => {
+      await home(h, lateGame(2));
+    },
+  },
+  guardian: {
+    desc: '灯塔会守卫站在晴原灯塔下的路边（spec 里再挑战他）',
+    run: async (h) => {
+      await home(h, lateGame(0, 0));
+      await sailTo(h, 'sunLighthouse');
+      h.teleport(GUARDIAN_SPOT.x - 1.5, GUARDIAN_SPOT.z + 2.5, Math.PI * 0.8);
+      h.setCamera(0.9, 0.3, 7);
+      h.advance(0.5);
+    },
+  },
+  regions: {
+    desc: '五大区各一座岛（前四座灯塔已重燃，雾海还有雾；spec 里逐个出航截图）',
+    run: async (h) => {
+      await home(h, lateGame(4));
+    },
+  },
   cloudlord: {
     desc: '单人讨伐云主（3 个位置；看阶段切换的表现用）',
     run: async (h) => {
-      await home(h);
+      await home(h, lateGame(0, 1));
       await h.sail('sunLighthouse');
       await until(() => h.mode() === 'explore' && h.world().players['p1']!.islandId === 'sunLighthouse', 30000);
       h.skipCutscene();

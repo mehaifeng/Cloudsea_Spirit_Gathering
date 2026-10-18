@@ -3,6 +3,8 @@ import {
   arrivalPoint,
   CLOUDLORD_SPOT,
   cloudlordSpirits,
+  effectiveFog,
+  GUARDIAN_SPOT,
   clockAt,
   worldPosition,
   foundationHeight,
@@ -54,7 +56,7 @@ import * as THREE from 'three';
 import type { Input } from './input';
 import { PLAYER_ID } from './session';
 
-export type InteractKind = 'gather' | 'wild' | 'keeper' | 'building' | 'dock' | 'pier' | 'core' | 'starter' | 'pet' | 'recruit' | 'joinBattle' | 'cloudlord';
+export type InteractKind = 'gather' | 'wild' | 'keeper' | 'building' | 'dock' | 'pier' | 'core' | 'starter' | 'pet' | 'recruit' | 'joinBattle' | 'cloudlord' | 'guardian';
 
 export interface Interactable {
   readonly kind: InteractKind;
@@ -336,6 +338,14 @@ export class ExploreView {
           this.root.add(lh.group);
           this.lighthouse = { view: lh, lit: null, actors: [] };
           this.obstacles.push({ x: 0, z: -12, r: 2.6 });
+          const cl = this.island!.cloudlord ? this.content.cloudlords.get(this.island!.cloudlord) : undefined;
+          if (cl) {
+            // 灯塔会守卫（M3-2）：站在去塔下的路边
+            const g = new HumanoidView({ ...cl.guardian.appearance });
+            g.setPosition(GUARDIAN_SPOT.x, GUARDIAN_SPOT.z, -Math.PI / 2 - 0.4);
+            this.root.add(g.group);
+            this.obstacles.push({ x: GUARDIAN_SPOT.x, z: GUARDIAN_SPOT.z, r: 0.45 });
+          }
         }
         if (this.island!.keeper) this.buildKeeperHome(this.island!.keeper);
       }
@@ -486,7 +496,8 @@ export class ExploreView {
       const dx = pos.x - here.x;
       const dz = pos.z - here.z;
       const dist = Math.hypot(dx, dz);
-      if (dist < 1) return;
+      // 相机远裁剪面 900 m：更远的岛看不见，不建（五大区后岛多了，M3-2）
+      if (dist < 1 || dist > 880) return;
       const lod = buildIslandLod(terrain, dist < 260 ? 'mid' : 'far', seed);
       lod.position.set(dx, pos.y - here.y, dz);
       this.root.add(lod);
@@ -560,7 +571,7 @@ export class ExploreView {
     // 天气与时间
     const region = this.island?.region ?? HOME_REGION;
     const weather = weatherAt(world.seed, region, world.tick);
-    this.env.setWeather(weather, this.island?.fogLevel ?? 0);
+    this.env.setWeather(weather, this.island ? effectiveFog(this.content, world as WorldState, this.island) : 0);
     const clock = clockAt(world.tick);
     const n = nightFactor(clock.tickOfDay);
     this.env.setNight(n);
@@ -680,8 +691,12 @@ export class ExploreView {
     // 云主（灯塔岛，M2）
     const clId = this.island?.cloudlord;
     if (clId && !world.lighthousesLit.includes(clId)) {
+      const cl = this.content.cloudlords.get(clId)!;
+      const guarded = !world.guardiansBeaten.includes(clId);
+      if (guarded && !Object.values(world.battles).some((x) => x.kind === 'guardian' && x.participants.includes(PLAYER_ID)))
+        list.push({ kind: 'guardian', id: clId, x: GUARDIAN_SPOT.x, z: GUARDIAN_SPOT.z, label: `挑战 ${cl.guardian.name}`, radius: 2.6 });
       const b = Object.values(world.battles).find((x) => x.cloudlordId === clId);
-      if (!b) list.push({ kind: 'cloudlord', id: clId, x: CLOUDLORD_SPOT.x, z: CLOUDLORD_SPOT.z, label: `讨伐 ${this.content.cloudlords.get(clId)!.name}（同岛的人可以一起加入）`, radius: 4.5 });
+      if (!b) list.push({ kind: 'cloudlord', id: clId, x: CLOUDLORD_SPOT.x, z: CLOUDLORD_SPOT.z, label: guarded ? `${cl.name}（先打赢灯塔会守卫）` : `讨伐 ${cl.name}（同岛的人可以一起加入）`, radius: 4.5 });
       else if (!b.participants.includes(PLAYER_ID) && b.state.turn === 1 && b.participants.length < 4) list.push({ kind: 'joinBattle', id: b.id, x: CLOUDLORD_SPOT.x, z: CLOUDLORD_SPOT.z, label: `加入讨伐（${b.participants.length}/4）`, radius: 4.5 });
     }
     for (const [id, e] of this.creatures) {

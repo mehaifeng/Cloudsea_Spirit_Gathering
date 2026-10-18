@@ -1,4 +1,4 @@
-import { ECONOMY, getContent } from '@cloudsea/content';
+import { ECONOMY, getContent, REGION_NAME, REGIONS } from '@cloudsea/content';
 import type { ClientTransport } from '@cloudsea/net';
 import { createCharacter as newCharacter, loadCharacter } from '@cloudsea/sim';
 import {
@@ -520,7 +520,7 @@ export class App {
     const w = this.world;
     const ex = this.explore;
     if (!w || !ex) return false;
-    const blocked = sailBlocked(this.content, w.players[PLAYER_ID]!, w.characters[PLAYER_ID]!, PLAYER_ID, islandId);
+    const blocked = sailBlocked(this.content, w.players[PLAYER_ID]!, w.characters[PLAYER_ID]!, PLAYER_ID, islandId, w);
     if (blocked) {
       this.ui.toast(blocked, 'error');
       return false;
@@ -674,6 +674,22 @@ export class App {
     );
   }
 
+  /** 终章（M3-2）：五座灯塔全部重燃。 */
+  private playFinale(): void {
+    this.ui.say(
+      '云海',
+      [
+        '五座灯塔同时亮着。光从晴原一直连到雾海，像一条重新接上的线。',
+        '蚀雾退回了云海深处。被它吞没的絮灵一只只醒了过来。',
+        '灯塔会的人说，很久很久以前，群岛就是这样亮着的。',
+        '你提着灯站在岛核前。家园岛上的絮灵们围了过来。',
+        '群岛重燃了。但云海很大——还有很多絮灵在等你遇见。',
+      ],
+      '终章 · 群岛重燃',
+      () => this.ui.toast('感谢游玩！世界会继续运转：繁殖、经营、和朋友一起探索都可以继续。'),
+    );
+  }
+
   private onEvents(events: readonly WorldEvent[]): void {
     const c = this.world?.characters[PLAYER_ID];
     for (const e of events) {
@@ -734,8 +750,18 @@ export class App {
           this.pendingRebuild = e.battleId;
           if (e.joiner !== PLAYER_ID) this.ui.toast(`${this.world?.characters[e.joiner]?.name ?? '队友'} 加入了战斗`);
           break;
-        case 'lighthouseLit':
-          this.ui.say('灯塔', ['塔顶的灯一点一点亮了起来。', '笼罩着晴原的蚀雾退去了。被净化的曦冕安静地趴在塔下。'], '灯塔重燃');
+        case 'lighthouseLit': {
+          const cl = this.content.cloudlords.get(e.cloudlordId);
+          const region = cl ? REGION_NAME[cl.region] : '这片群岛';
+          const next = cl ? REGIONS[REGIONS.indexOf(cl.region) + 1] : undefined;
+          const lines = ['塔顶的灯一点一点亮了起来。', `笼罩着${region}的蚀雾退去了。被净化的${cl?.name.replace(/^蚀化的/, '') ?? '云主'}安静地趴在塔下。`];
+          if (next) lines.push(`远处，${REGION_NAME[next]}方向的浓雾也薄了一些——星图上能看到那边的岛了。`);
+          const finale = events.some((x) => x.t === 'finale' && x.playerId === PLAYER_ID);
+          this.ui.say('灯塔', lines, '灯塔重燃', finale ? () => this.playFinale() : undefined);
+          break;
+        }
+        case 'npcLine':
+          this.ui.say(e.speaker, e.lines);
           break;
         case 'recovered': {
           const s = this.world?.characters[PLAYER_ID]?.spirits[e.spiritId];
@@ -805,6 +831,9 @@ export class App {
       case 'cloudlord':
         await this.act({ type: 'challengeCloudlord', cloudlordId: it.id });
         break;
+      case 'guardian':
+        await this.act({ type: 'challengeGuardian', cloudlordId: it.id });
+        break;
       case 'starter':
         if (await this.act({ type: 'adoptStarter' })) {
           await this.act({ type: 'tutorial', step: 2 });
@@ -820,10 +849,10 @@ export class App {
   /** 场景直达用的宿主（只发意图）。 */
   private scenarioHost(): ScenarioHost {
     return {
-      newGame: async () => {
+      newGame: async (prep) => {
         this.titleEl?.remove();
         this.titleEl = null;
-        this.startSession(GameSession.create('小禾', 20261017));
+        this.startSession(GameSession.create('小禾', 20261017, prep));
       },
       act: async (intent) => (await this.session?.client.request(intent)) ?? { ok: false, error: '没有会话' },
       world: () => this.world!,

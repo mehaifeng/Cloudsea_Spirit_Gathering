@@ -150,6 +150,68 @@ const SCENES: Record<string, (win: Page) => Promise<void>> = {
     expect(await g<string>(win, 'Object.values(g.world().battles)[0].kind')).toBe('cloudlord');
     expect(await g<number>(win, 'Object.values(g.world().battles)[0].state.sides[1].units.length')).toBe(3);
   },
+  chart: async (win) => {
+    await win.keyboard.press('KeyM');
+    await win.waitForSelector('#modal .chart');
+    for (const [label, name] of [['晴原', 'a-sunPlains'], ['风谷', 'b-windValley'], ['雨泽', 'c-rainMarsh'], ['雷崖', 'd-thunderCliff']] as const) {
+      await win.locator('#modal .btn', { hasText: label }).first().click();
+      await win.waitForTimeout(200);
+      await shot(win, `chart-${name}`);
+    }
+    // 雷崖还在浓雾里：岛按钮都不能点
+    expect(await win.locator('#modal .chart-fog').isVisible()).toBe(true);
+    expect(await win.locator('#modal .chart .isle .btn:not([aria-disabled="true"])').count()).toBe(0);
+    // 每张图的岛都在图框之内
+    for (const label of ['晴原', '风谷', '雨泽', '雷崖', '雾海']) {
+      await win.locator('#modal .btn', { hasText: label }).first().click();
+      await win.waitForTimeout(100);
+      const box = (await win.locator('#modal .chart').boundingBox())!;
+      for (const b of await win.locator('#modal .chart .isle').all()) {
+        const r = (await b.boundingBox())!;
+        expect(r.x, label).toBeGreaterThanOrEqual(box.x - 1);
+        expect(r.x + r.width, label).toBeLessThanOrEqual(box.x + box.width + 1);
+        expect(r.y, label).toBeGreaterThanOrEqual(box.y - 1);
+        expect(r.y + r.height, label).toBeLessThanOrEqual(box.y + box.height + 1);
+      }
+    }
+  },
+  guardian: async (win) => {
+    await win.waitForTimeout(600);
+    await shot(win, 'guardian-a-explore');
+    expect(await g<boolean>(win, `g.interactables().some((i) => i.kind === 'guardian')`)).toBe(true);
+    // 走到守卫面前（跟着的絮灵也在附近，贴近一点让守卫成为最近的交互对象）
+    await g(win, `(() => { const i = g.interactables().find((i) => i.kind === 'guardian'); g.teleport(i.x - 0.9, i.z + 0.3, Math.PI / 2); })()`);
+    for (let i = 0; i < 30 && (await g<string | undefined>(win, 'g.nearest()?.kind')) !== 'guardian'; i++) await win.waitForTimeout(100);
+    expect(await g<string | undefined>(win, 'g.nearest()?.kind')).toBe('guardian');
+    await win.keyboard.press('KeyE');
+    for (let i = 0; i < 40 && !(await g<boolean>(win, 'g.dialogueOpen()')); i++) await win.waitForTimeout(100);
+    await win.waitForTimeout(300);
+    await shot(win, 'guardian-b-line');
+    for (let i = 0; i < 40 && (await g<string>(win, 'g.mode()')) !== 'battle'; i++) {
+      if (await g<boolean>(win, 'g.dialogueOpen()')) await win.keyboard.press('Enter');
+      await win.waitForTimeout(100);
+    }
+    await win.waitForTimeout(1500);
+    await shot(win, 'guardian-c-battle');
+    expect(await g<string>(win, 'Object.values(g.world().battles)[0].kind')).toBe('guardian');
+  },
+  regions: async (win) => {
+    const showcase: Record<string, string> = { sunPlains: 'wheatSlope', windValley: 'gustRidge', rainMarsh: 'lotusPond', thunderCliff: 'stormMesa', mistSea: 'jellyReef' };
+    for (const [region, isl] of Object.entries(showcase)) {
+      expect(await g<boolean>(win, `g.sail('${isl}')`), isl).toBe(true);
+      for (let i = 0; i < 600; i++) {
+        const done = await g<boolean>(win, `g.mode() === 'explore' && g.world().players.p1.islandId === '${isl}'`);
+        if (done) break;
+        if ((await g<string>(win, 'g.mode()')) === 'voyage') await g(win, 'g.fastForward(200)');
+        await win.waitForTimeout(100);
+      }
+      await g(win, 'g.skipCutscene()');
+      for (let i = 0; i < 10 && (await g<boolean>(win, 'g.dialogueOpen()')); i++) await win.keyboard.press('Enter');
+      await g(win, 'g.setCamera(0.5, 0.3, 14)');
+      await win.waitForTimeout(900);
+      await shot(win, `region-${region}`);
+    }
+  },
   ambush: async (win) => {
     for (let i = 0; i < 40 && (await g<string>(win, 'g.mode()')) !== 'cutscene'; i++) await win.waitForTimeout(100);
     await win.waitForTimeout(700);

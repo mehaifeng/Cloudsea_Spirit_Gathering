@@ -8,16 +8,22 @@ import {
   NATURES,
   PART_SLOTS,
   REGION_NAME,
+  REGIONS,
   STAT_NAME,
   TOOL_NAME,
   toolUpgradeCost,
   type ContentDb,
   type ItemStack,
+  type Region,
   type ToolKind,
 } from '@cloudsea/content';
 import {
   breedBlocker,
   buildingSlots,
+  chapterOf,
+  effectiveFog,
+  lighthouseLit,
+  regionUnlocked,
   buildingsUsed,
   clockAt,
   dayOf,
@@ -686,46 +692,75 @@ export function openDock(ctx: Ctx, openChart: () => void): void {
   });
 }
 
+let chartRegion: Region | null = null;
+
 export function openStarChart(ctx: Ctx): void {
+  // 默认翻到玩家所在的大区（在家就翻到最新开放的大区）
+  {
+    const w = ctx.world();
+    const here = ctx.content.islands.get(w.players[PLAYER_ID]!.islandId);
+    chartRegion = here?.region ?? [...REGIONS].reverse().find((r) => regionUnlocked(ctx.content, w, r)) ?? 'sunPlains';
+  }
   ctx.ui.openModal(() => {
     const w = ctx.world();
     const c = me(ctx);
     const p = w.players[PLAYER_ID]!;
-    const chart = h('div', { class: 'chart' });
-    const place = (x: number, y: number, el: HTMLElement) => {
-      el.style.left = `${x * 100}%`;
-      el.style.top = `${y * 100}%`;
+    const region = chartRegion ?? 'sunPlains';
+    const unlocked = regionUnlocked(ctx.content, w, region);
+    const lit = lighthouseLit(ctx.content, w, region);
+    const tabs = h(
+      'div',
+      { class: 'row' },
+      ...REGIONS.map((r) => {
+        const open = regionUnlocked(ctx.content, w, r);
+        const done = lighthouseLit(ctx.content, w, r);
+        return button([h('span', {}, `${REGION_NAME[r]}${done ? ' ✦' : open ? '' : ' · 浓雾'}`)], () => ((chartRegion = r), ctx.ui.refresh(true)), { class: `${r === region ? 'selected' : ''} small`, title: open ? '' : '先点亮上一座灯塔' });
+      }),
+    );
+    const isles = [...ctx.content.islands.values()].filter((i) => i.region === region);
+    // 每个大区单独铺满一张图（chartPos 是整片群岛的坐标，航行距离用它算）
+    const pts = [...isles.map((i) => i.chartPos), ...(region === 'sunPlains' ? [HOME_CHART_POS] : [])];
+    const [minX, maxX, minY, maxY] = [Math.min(...pts.map((q) => q.x)), Math.max(...pts.map((q) => q.x)), Math.min(...pts.map((q) => q.y)), Math.max(...pts.map((q) => q.y))];
+    const norm = (q: { x: number; y: number }) => ({ x: 0.1 + (0.8 * (q.x - minX)) / Math.max(0.01, maxX - minX), y: 0.12 + (0.76 * (q.y - minY)) / Math.max(0.01, maxY - minY) });
+    const chart = h('div', { class: `chart${unlocked ? '' : ' locked'}${lit ? ' lit' : ''}` });
+    const place = (q: { x: number; y: number }, el: HTMLElement) => {
+      const n = norm(q);
+      el.style.left = `${n.x * 100}%`;
+      el.style.top = `${n.y * 100}%`;
       chart.append(el);
     };
-    place(
-      HOME_CHART_POS.x,
-      HOME_CHART_POS.y,
-      h('div', { class: 'isle' }, button([h('b', {}, '家园岛'), h('span', { class: 'muted' }, '中枢群岛')], () => void sail(ctx, 'home'), { class: p.islandId === homeIslandId(PLAYER_ID) ? 'selected' : '' })),
-    );
-    for (const isl of ctx.content.islands.values()) {
+    if (region === 'sunPlains')
+      place(HOME_CHART_POS, h('div', { class: 'isle' }, button([h('b', {}, '家园岛'), h('span', { class: 'muted' }, '中枢群岛')], () => void sail(ctx, 'home'), { class: p.islandId === homeIslandId(PLAYER_ID) ? 'selected' : '' })));
+    for (const isl of isles) {
       const weather = weatherAt(w.seed, isl.region, w.tick);
-      const blocked = c.tools.lantern < isl.fogLevel ? `需要 ${isl.fogLevel} 级提灯` : c.tools.skiff < isl.skiffLevel ? `需要 ${isl.skiffLevel} 级云舟` : '';
-      const fuel = isl.fogLevel > 0 ? `燃料 ${isl.fogLevel}` : '无雾';
-      const keeper = isl.keeper ? ctx.content.keepers.get(isl.keeper)!.name : '';
+      const fog = effectiveFog(ctx.content, w, isl);
+      const blocked = !unlocked ? '浓雾' : c.tools.lantern < fog ? `需要 ${fog} 级提灯` : c.tools.skiff < isl.skiffLevel ? `需要 ${isl.skiffLevel} 级云舟` : '';
+      const fuel = fog > 0 ? `燃料 ${fog}` : isl.fogLevel > 0 ? '雾已散' : '无雾';
+      const keeper = isl.keeper ? ctx.content.keepers.get(isl.keeper)?.name ?? '' : '';
+      const sub = isl.kind === 'lighthouse' ? (lit ? '灯塔 · 已重燃' : '灯塔 · 熄灭') : keeper ? `守岛人 ${keeper}` : `Lv.${isl.wildLevel.min}–${isl.wildLevel.max}`;
       place(
-        isl.chartPos.x,
-        isl.chartPos.y,
+        isl.chartPos,
         h(
           'div',
-          { class: 'isle' },
+          { class: `isle${isl.kind === 'lighthouse' ? ' lighthouse' : ''}` },
           button(
-            [h('span', { class: 'row', style: 'gap:3px' }, elementIcon(weather, 14), h('b', {}, isl.name)), h('span', { class: 'muted' }, keeper ? `守岛人 ${keeper}` : `Lv.${isl.wildLevel.min}–${isl.wildLevel.max}`), h('span', { class: 'muted' }, blocked || fuel)],
+            [h('span', { class: 'row', style: 'gap:3px' }, elementIcon(weather, 14), h('b', {}, unlocked ? isl.name : '？？？')), h('span', { class: 'muted' }, unlocked ? sub : ''), h('span', { class: 'muted' }, blocked || fuel)],
             () => void sail(ctx, isl.id),
-            { class: p.islandId === isl.id ? 'selected' : '', disabled: !!blocked, title: isl.description },
+            { class: p.islandId === isl.id ? 'selected' : '', disabled: !!blocked, title: unlocked ? isl.description : '' },
           ),
         ),
       );
     }
-    const fc = forecast(w.seed, 'sunPlains', w.tick).map((f) => `${dayOf(f.from) === dayOf(w.tick) ? '今天' : '明天'}起 ${ELEMENT_INFO[f.weather].name}`);
+    if (!unlocked) {
+      const prev = REGIONS[REGIONS.indexOf(region) - 1]!;
+      chart.append(h('div', { class: 'chart-fog' }, h('b', {}, `${REGION_NAME[region]}还在浓雾里`), h('span', {}, `点亮${REGION_NAME[prev]}的灯塔，雾就会散开。`)));
+    }
+    const fc = forecast(w.seed, region, w.tick).map((f) => `${dayOf(f.from) === dayOf(w.tick) ? '今天' : '明天'}起 ${ELEMENT_INFO[f.weather].name}`);
     return frame(
-      '星图',
+      `星图 · 第 ${chapterOf(w)} 章`,
       ctx,
-      h('div', { class: 'muted' }, `${REGION_NAME.sunPlains}天气预报：${fc.join(' → ')}。有雾的岛需要提灯燃料，雾浓度高于提灯等级就进不去。`),
+      tabs,
+      h('div', { class: 'muted' }, `${REGION_NAME[region]}天气预报：${fc.join(' → ')}。${lit ? '这里的灯塔已经重燃，雾散了，出航不用燃料。' : '有雾的岛需要提灯燃料，雾浓度高于提灯等级就进不去。'}`),
       chart,
     );
   });

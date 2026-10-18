@@ -1,5 +1,5 @@
 import { ELEMENT_INFO, type ContentDb } from '@cloudsea/content';
-import { clockAt, currentHp, formatClock, homeIslandId, maxHpOf, weatherAt, type WorldState } from '@cloudsea/sim';
+import { clockAt, currentHp, effectiveFog, formatClock, homeIslandId, maxHpOf, weatherAt, type WorldState } from '@cloudsea/sim';
 import { clear, elementIcon, h, icon } from '@cloudsea/ui';
 import type { Interactable } from './explore';
 import { PLAYER_ID } from './session';
@@ -60,7 +60,7 @@ export class Hud {
       this.ui.hudTL.append(
         h('span', { class: 'hud-chip' }, icon('clock'), `第 ${clock.day} 天 ${formatClock(clock)}`, clock.isNight ? ' · 夜' : ''),
         h('span', { class: 'hud-chip', title: '天气' }, elementIcon(weather, 16), ELEMENT_INFO[weather].name),
-        h('span', { class: 'hud-chip' }, placeName, island ? h('span', { class: 'muted' }, ` 雾 ${island.fogLevel}`) : null),
+        h('span', { class: 'hud-chip' }, placeName, island ? h('span', { class: 'muted' }, ` 雾 ${effectiveFog(this.content, world, island)}`) : null),
       );
       if (world.paused) this.ui.hudTL.append(h('span', { class: 'hud-chip' }, '已暂停'));
       this.ui.hudTR.append(

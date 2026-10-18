@@ -100,11 +100,13 @@ export class GameSession {
     }
   }
 
-  static create(name: string, seed?: number): GameSession {
+  /** prep：测试场景用，相当于读一份事先做好的存档（开局前整理世界；会话开始后只走意图）。 */
+  static create(name: string, seed?: number, prep?: (world: WorldState) => void): GameSession {
     seed ??= (Date.now() ^ (Math.random() * 1e9)) >>> 0;
     const content = getContent();
     const world = createWorld(content, { seed, hostId: 'p1' });
     joinWorld(world, createCharacter(content, { id: 'p1', name: name.trim().slice(0, 16) || '守岛人' }));
+    prep?.(world);
     return new GameSession(`world-${seed.toString(36)}`, world);
   }
 
