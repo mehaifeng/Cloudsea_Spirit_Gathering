@@ -98,6 +98,7 @@ export function createWorld(content: ContentDb, o: { seed: number; hostId: strin
     battles: {},
     chapter: 1,
     lighthousesLit: [],
+    guardiansBeaten: [],
   };
 }
 

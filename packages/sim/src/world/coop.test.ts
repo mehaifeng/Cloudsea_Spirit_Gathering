@@ -28,6 +28,8 @@ function coopWorld(players: number, level = 30, seed = 11): WorldState {
     c.tutorial = { step: 6, done: true };
     joinWorld(w, c);
   }
+  // 云主战的测试：灯塔守卫当作已经打过（守卫另有测试，M3-2）
+  w.guardiansBeaten.push('sunPlainsLord');
   return w;
 }
 

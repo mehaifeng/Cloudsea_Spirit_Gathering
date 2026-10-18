@@ -24,6 +24,7 @@ export function spawnTable(content: ContentDb, island: Island, world: WorldState
       if (s.weathers && !s.weathers.includes(weather)) continue;
       if (s.time === 'night' && !night) continue;
       if (s.time === 'day' && night) continue;
+      // 雾浓度在这里代表生态（雾里才有的絮灵），灯塔重燃后也不变；灯塔只影响能不能进岛
       if ((s.minFogLevel ?? 0) > island.fogLevel) continue;
       weight += s.weight;
     }
@@ -32,10 +33,14 @@ export function spawnTable(content: ContentDb, island: Island, world: WorldState
   return out;
 }
 
-/** 按野外等级选进化段（低于 16 级都是幼絮；更高等级混入成灵）。 */
-function formIndexFor(level: number, rng: Rng): number {
-  if (level >= 36 && rng.chance(0.3)) return 2;
-  if (level >= 16 && rng.chance(0.5)) return 1;
+/**
+ * 按野外等级选进化段：到了该线的进化等级才可能出现下一段（成灵 50%、云主形 30%）。
+ * 按每条线自己的进化等级与段数（两段线没有云主形，M3-1）；三段线的随机数用法与 M1 相同。
+ */
+function formIndexFor(level: number, rng: Rng, line: Line): number {
+  const evo = line.forms.map((f) => f.evolution?.level ?? Infinity);
+  if (line.forms.length === 3 && level >= evo[1]! && rng.chance(0.3)) return 2;
+  if (level >= evo[0]! && rng.chance(0.5)) return 1;
   return 0;
 }
 
@@ -46,7 +51,7 @@ export function makeWildSpirit(content: ContentDb, rng: Rng, line: Line, island:
     ownerId: 'wild',
     genes: generateWildGenes(rng, line),
     level: Math.min(60, level),
-    formIndex: formIndexFor(level, rng),
+    formIndex: formIndexFor(level, rng, line),
     blighted,
   });
 }

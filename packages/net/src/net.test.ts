@@ -163,6 +163,7 @@ describe('4 人云主讨伐（M2 验收：全程不出现不同步）', () => {
   it('房主 + 3 位客人经协议加入、一起航行到灯塔岛、讨伐云主到胜利；每一步每个客户端的世界都与房主一致', async () => {
     const world = createWorld(content, { seed: 99, hostId: 'h' });
     joinWorld(world, strongCharacter('h', '房主'));
+    world.guardiansBeaten.push('sunPlainsLord');
     const hub = createHub();
     const host = new HostSession(content, world, hub.host);
     const clients = [new ClientSession(hub.connect('local'), { playerId: 'h' })];

@@ -509,4 +509,17 @@ export const SKILLS: readonly SkillInput[] = [
     effects: [],
     description: '积蓄全身的蚀光，砸向一名敌人。出手较慢。',
   },
+  // ---------- 其余四位云主的招式（M3-2）----------
+  { id: 'galeFlare', name: '蚀岚冲击', element: 'wind', source: 'cloudlord', category: 'attack', power: 70, qiCost: 1, accuracy: 95, target: 'singleEnemy', priority: 0, passive: false, effects: [], description: '裹着蚀雾的风之力，冲向一名敌人。' },
+  { id: 'galeWave', name: '蚀岚横扫', element: 'wind', source: 'cloudlord', category: 'attack', power: 40, qiCost: 2, accuracy: 90, target: 'allEnemies', priority: 0, passive: false, effects: [], description: '一圈暗沉的风扫过全体敌人。' },
+  { id: 'galeSmite', name: '狂岚重击', element: 'wind', source: 'cloudlord', category: 'attack', power: 110, qiCost: 2, accuracy: 85, target: 'singleEnemy', priority: -1, passive: false, effects: [], description: '积蓄全身的蚀雾，砸向一名敌人。出手较慢。' },
+  { id: 'tideFlare', name: '蚀潮冲击', element: 'rain', source: 'cloudlord', category: 'attack', power: 70, qiCost: 1, accuracy: 95, target: 'singleEnemy', priority: 0, passive: false, effects: [], description: '裹着蚀雾的雨之力，冲向一名敌人。' },
+  { id: 'tideWave', name: '蚀潮横扫', element: 'rain', source: 'cloudlord', category: 'attack', power: 40, qiCost: 2, accuracy: 90, target: 'allEnemies', priority: 0, passive: false, effects: [], description: '一圈暗沉的雨扫过全体敌人。' },
+  { id: 'tideSmite', name: '怒潮重击', element: 'rain', source: 'cloudlord', category: 'attack', power: 110, qiCost: 2, accuracy: 85, target: 'singleEnemy', priority: -1, passive: false, effects: [], description: '积蓄全身的蚀雾，砸向一名敌人。出手较慢。' },
+  { id: 'boltFlare', name: '蚀霆冲击', element: 'thunder', source: 'cloudlord', category: 'attack', power: 70, qiCost: 1, accuracy: 95, target: 'singleEnemy', priority: 0, passive: false, effects: [], description: '裹着蚀雾的雷之力，冲向一名敌人。' },
+  { id: 'boltWave', name: '蚀霆横扫', element: 'thunder', source: 'cloudlord', category: 'attack', power: 40, qiCost: 2, accuracy: 90, target: 'allEnemies', priority: 0, passive: false, effects: [], description: '一圈暗沉的雷扫过全体敌人。' },
+  { id: 'boltSmite', name: '裂霆重击', element: 'thunder', source: 'cloudlord', category: 'attack', power: 110, qiCost: 2, accuracy: 85, target: 'singleEnemy', priority: -1, passive: false, effects: [], description: '积蓄全身的蚀雾，砸向一名敌人。出手较慢。' },
+  { id: 'veilFlare', name: '蚀雾冲击', element: 'mist', source: 'cloudlord', category: 'attack', power: 70, qiCost: 1, accuracy: 95, target: 'singleEnemy', priority: 0, passive: false, effects: [], description: '裹着蚀雾的雾之力，冲向一名敌人。' },
+  { id: 'veilWave', name: '蚀雾横扫', element: 'mist', source: 'cloudlord', category: 'attack', power: 40, qiCost: 2, accuracy: 90, target: 'allEnemies', priority: 0, passive: false, effects: [], description: '一圈暗沉的雾扫过全体敌人。' },
+  { id: 'veilSmite', name: '深雾重击', element: 'mist', source: 'cloudlord', category: 'attack', power: 110, qiCost: 2, accuracy: 85, target: 'singleEnemy', priority: -1, passive: false, effects: [], description: '积蓄全身的蚀雾，砸向一名敌人。出手较慢。' },
 ];

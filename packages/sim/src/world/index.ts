@@ -15,3 +15,4 @@ export * from './time';
 export * from './voyage';
 export * from './weather';
 export * from './wild';
+export * from './progress';

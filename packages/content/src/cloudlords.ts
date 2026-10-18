@@ -35,6 +35,18 @@ export const cloudlordSchema = z.strictObject({
     }),
   ),
   reward: z.strictObject({ shells: z.int().min(0) }),
+  /**
+   * 灯塔守卫（DESIGN 2 每章流程，v0.9）：灯塔会派驻的守卫，单人对战（类似道馆）；
+   * 世界里有人打赢过才能讨伐云主。
+   */
+  guardian: z.strictObject({
+    name: z.string().min(1).max(12),
+    appearance: z.strictObject({ skinTone: z.string(), hairColor: z.string(), clothColor: z.string(), scarfColor: z.string(), height: z.number().min(0.85).max(1.15) }),
+    team: z.array(unitSchema).min(1).max(6),
+    /** 开战前 / 输了 / 赢了时说的话。 */
+    lines: z.strictObject({ intro: z.string().max(120), win: z.string().max(120), lose: z.string().max(120) }),
+    reward: z.strictObject({ shells: z.int().min(0), items: z.array(z.strictObject({ item: z.string(), count: z.int().min(1) })).default([]) }),
+  }),
   description: z.string().min(1),
 });
 export type Cloudlord = z.infer<typeof cloudlordSchema>;

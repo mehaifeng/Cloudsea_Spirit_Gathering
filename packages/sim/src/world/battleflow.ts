@@ -27,6 +27,8 @@ export const BATTLE_CHOICE_TICKS = 30 * TICKS_PER_SECOND;
 const MAX_PARTICIPANTS = { wild: 3, cloudlord: 4 } as const;
 /** 云主在灯塔岛上的位置（岛的局部坐标；渲染端同一处摆放）。 */
 export const CLOUDLORD_SPOT = { x: 0, z: -6 } as const;
+/** 灯塔守卫站的位置（M3-2）。 */
+export const GUARDIAN_SPOT = { x: 5, z: -2 } as const;
 
 /** 能出战的队伍成员：生命大于 0、未蚀化、不在净化或蛋里（DESIGN 4.8，v0.7）。 */
 export function battleReady(content: ContentDb, c: CharacterState): Spirit[] {
@@ -236,6 +238,7 @@ export function startCloudlordBattle(content: ContentDb, world: WorldState, play
   if (p.battleId) return '已经在战斗中';
   if (p.islandId !== cl.island) return '要先到灯塔岛上';
   if (world.lighthousesLit.includes(cl.id)) return '灯塔已经重新点亮了';
+  if (!world.guardiansBeaten.includes(cl.id)) return `先打赢${cl.guardian.name}`;
   if (Object.values(world.battles).some((b) => b.cloudlordId === cl.id)) return '已经有人在讨伐了：靠近按“加入”一起打';
   if (Math.hypot(p.x - CLOUDLORD_SPOT.x, p.z - CLOUDLORD_SPOT.z) > 8) return '再靠近一点';
   if (battleReady(content, c).length === 0) return NO_READY_SPIRITS;
@@ -245,6 +248,53 @@ export function startCloudlordBattle(content: ContentDb, world: WorldState, play
   return begin(
     world,
     { id, kind: 'cloudlord', playerId, islandId: p.islandId, wildId: null, keeperId: null, aiSeed: seed, preparedAi: null, cloudlordId: cl.id, state: cloudlordState(content, world, cl, [playerId], seed) },
+    events,
+  );
+}
+
+// ---------------------------------------------------------------- 灯塔守卫（M3-2）
+
+/** 守卫的队伍（确定性）。 */
+export function guardianSpirits(content: ContentDb, world: WorldState, cl: Cloudlord): Spirit[] {
+  return cl.guardian.team.map((u, i) => {
+    const rng = createRng(deriveSeed(world.seed, `guardian:${cl.id}:${i}`));
+    const line = content.lines.get(u.line)!;
+    const genes = { ...generateWildGenes(rng, line), talents: { hp: 20, power: 20, guard: 20, agility: 20, resonance: 20 } };
+    return createSpirit(content, { id: `${cl.id}-g${i}`, ownerId: 'guardian', genes, level: u.level, formIndex: u.formIndex });
+  });
+}
+
+/** 挑战灯塔守卫（单人，类似道馆）：打赢后世界里就可以讨伐云主了。 */
+export function startGuardianBattle(content: ContentDb, world: WorldState, playerId: string, cloudlordId: string, events: WorldEvent[]): string {
+  const cl = content.cloudlords.get(cloudlordId);
+  if (!cl) return '没有这座灯塔';
+  const p = world.players[playerId]!;
+  const c = world.characters[playerId]!;
+  if (p.battleId) return '已经在战斗中';
+  if (p.islandId !== cl.island) return '要先到灯塔岛上';
+  if (world.guardiansBeaten.includes(cl.id)) return `已经打赢过${cl.guardian.name}了`;
+  if (Math.hypot(p.x - GUARDIAN_SPOT.x, p.z - GUARDIAN_SPOT.z) > 6) return '再靠近一点';
+  const ready = battleReady(content, c);
+  if (ready.length === 0) return NO_READY_SPIRITS;
+  const team = guardianSpirits(content, world, cl);
+  markSeen(c, team.map((s) => s.formId));
+  events.push({ t: 'npcLine', playerId, speaker: cl.guardian.name, lines: [cl.guardian.lines.intro] });
+  const id = newId(world, 'b');
+  const seed = deriveSeed(world.seed, `battle:${id}`);
+  return begin(
+    world,
+    {
+      id,
+      kind: 'guardian',
+      playerId,
+      islandId: p.islandId,
+      wildId: null,
+      keeperId: null,
+      aiSeed: seed,
+      preparedAi: null,
+      cloudlordId: cl.id,
+      state: createBattle(content, { kind: 'guardian', sides: [{ spirits: ready }, { spirits: team }], baseWeather: cl.weather, seed }),
+    },
     events,
   );
 }
@@ -315,7 +365,7 @@ function aiActions(content: ContentDb, b: ActiveBattle): SideActions {
 }
 
 function aiFor(b: ActiveBattle) {
-  if (b.kind === 'keeper' || b.kind === 'cloudlord') return AI_PRESETS.normal;
+  if (b.kind === 'keeper' || b.kind === 'cloudlord' || b.kind === 'guardian') return AI_PRESETS.normal;
   if (b.kind === 'scripted') return AI_PRESETS.easy;
   return AI_PRESETS.wild;
 }
@@ -469,7 +519,8 @@ export function finishBattle(content: ContentDb, world: WorldState, b: ActiveBat
   if (result === 'win') {
     const enemyLevels = b.state.sides[1].units.reduce((a, u) => a + u.level, 0);
     const cl = b.cloudlordId ? content.cloudlords.get(b.cloudlordId) : undefined;
-    const shells = cl ? cl.reward.shells : b.kind === 'keeper' ? 120 : b.kind === 'scripted' ? 0 : 3 * enemyLevels;
+    const guardian = b.kind === 'guardian' && cl ? cl.guardian : undefined;
+    const shells = guardian ? guardian.reward.shells : cl ? cl.reward.shells : b.kind === 'keeper' ? 120 : b.kind === 'scripted' ? 0 : 3 * enemyLevels;
     for (const pid of members) {
       const c = world.characters[pid]!;
       c.stats.battlesWon++;
@@ -481,15 +532,30 @@ export function finishBattle(content: ContentDb, world: WorldState, b: ActiveBat
         c.backpack['mistCrystal'] = (c.backpack['mistCrystal'] ?? 0) + 1;
         events.push({ t: 'items', playerId: c.id, item: 'mistCrystal', count: 1, where: 'backpack' });
       }
-      if (cl) {
+      if (guardian) {
+        for (const st of guardian.reward.items) {
+          c.backpack[st.item] = (c.backpack[st.item] ?? 0) + st.count;
+          events.push({ t: 'items', playerId: c.id, item: st.item, count: st.count, where: 'backpack' });
+        }
+      } else if (cl) {
         const lordForm = b.state.sides[1].units[0]!.formId;
         if (!c.memoryShards.includes(lordForm)) c.memoryShards.push(lordForm);
       }
     }
-    if (cl && !world.lighthousesLit.includes(cl.id)) {
+    if (guardian && cl && !world.guardiansBeaten.includes(cl.id)) {
+      world.guardiansBeaten.push(cl.id);
+      for (const pid of members) events.push({ t: 'npcLine', playerId: pid, speaker: guardian.name, lines: [guardian.lines.win] });
+    } else if (cl && b.kind === 'cloudlord' && !world.lighthousesLit.includes(cl.id)) {
       world.lighthousesLit.push(cl.id);
+      world.chapter = world.lighthousesLit.length + 1;
       for (const pid of members) events.push({ t: 'lighthouseLit', playerId: pid, cloudlordId: cl.id });
+      // 五座灯塔全部重燃：终章
+      if ([...content.cloudlords.keys()].every((id) => world.lighthousesLit.includes(id))) for (const pid of members) events.push({ t: 'finale', playerId: pid });
     }
+  }
+  if (result !== 'win' && b.kind === 'guardian' && b.cloudlordId) {
+    const g = content.cloudlords.get(b.cloudlordId)?.guardian;
+    if (g) for (const pid of members) events.push({ t: 'npcLine', playerId: pid, speaker: g.name, lines: [g.lines.lose] });
   }
   if (b.wildId && (result === 'win' || captured.length > 0)) delete world.islands[b.islandId]?.wild[b.wildId];
 

@@ -7,7 +7,7 @@ import type { CharacterState, PlayerRuntime, WorldState } from './state';
  * 存档（铁律 7、DESIGN 9.3 / 9.4）：世界存档与角色存档分开，都带 version。
  * 结构变更时：版本号 +1，在 MIGRATIONS 里加一条从旧版本升级的函数，并补测试。
  */
-export const WORLD_SAVE_VERSION = 4;
+export const WORLD_SAVE_VERSION = 5;
 export const CHARACTER_SAVE_VERSION = 3;
 
 export interface WorldSaveFile {
@@ -65,6 +65,12 @@ export const WORLD_MIGRATIONS: Readonly<Record<number, Migration>> = {
   3: (data) => {
     const w = JSON.parse(JSON.stringify(data['world'])) as Record<string, unknown>;
     w['lighthousesLit'] = w['lighthousesLit'] ?? [];
+    return { ...data, world: w };
+  },
+  /** v4 → v5（M3-2）：灯塔守卫。已经重燃的灯塔视为守卫也打赢了。 */
+  4: (data) => {
+    const w = JSON.parse(JSON.stringify(data['world'])) as Record<string, unknown>;
+    w['guardiansBeaten'] = w['guardiansBeaten'] ?? [...((w['lighthousesLit'] as string[] | undefined) ?? [])];
     return { ...data, world: w };
   },
 };

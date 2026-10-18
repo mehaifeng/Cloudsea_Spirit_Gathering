@@ -182,4 +182,6 @@ export interface WorldState {
   chapter: number;
   /** 已重燃的灯塔（被打败的云主 id，M2）。 */
   lighthousesLit: string[];
+  /** 打赢过的灯塔守卫（按云主 id；世界里有人赢过就算，M3-2）。 */
+  guardiansBeaten: string[];
 }

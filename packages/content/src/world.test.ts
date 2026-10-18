@@ -1,3 +1,4 @@
+import { REGIONS } from './species';
 import { describe, expect, it } from 'vitest';
 import { BLUEPRINT_SHOP, coreUpgradeCost } from './data/economy';
 import { GATHER_YIELD } from './islands';
@@ -7,12 +8,18 @@ import { getContent } from './validate';
 const db = getContent();
 
 describe('M1 世界内容', () => {
-  it('晴原 3 座固定岛，雾浓度 0 / 1 / 2；2 位守岛人各有自己的岛', () => {
-    const fixed = [...db.islands.values()].filter((i) => i.kind === 'fixed');
-    expect(fixed.map((i) => i.fogLevel).sort()).toEqual([0, 1, 2]);
-    expect(fixed.every((i) => i.region === 'sunPlains')).toBe(true);
-    expect(db.keepers.size).toBe(2);
-    for (const k of db.keepers.keys()) expect([...db.islands.values()].some((i) => i.keeper === k)).toBe(true);
+  it('五大区：每区 5 座固定岛 + 1 座灯塔岛（云主）；云主等级随章节递增；晴原有阿禾、岚的守岛人岛（M3-2）', () => {
+    for (const region of REGIONS) {
+      const isl = [...db.islands.values()].filter((i) => i.region === region);
+      expect(isl.filter((i) => i.kind === 'fixed'), region).toHaveLength(5);
+      expect(isl.filter((i) => i.kind === 'lighthouse'), region).toHaveLength(1);
+    }
+    const lords = REGIONS.map((r) => [...db.cloudlords.values()].find((c) => c.region === r)!);
+    for (let i = 1; i < lords.length; i++) expect(lords[i]!.boss.level).toBeGreaterThan(lords[i - 1]!.boss.level);
+    for (const k of ['aHe', 'lan']) expect([...db.islands.values()].some((i) => i.keeper === k)).toBe(true);
+    // 每区的野生等级在上一区之后
+    const minLv = REGIONS.map((r) => Math.min(...[...db.islands.values()].filter((i) => i.region === r && i.kind === 'fixed').map((i) => i.wildLevel.min)));
+    for (let i = 1; i < minLv.length; i++) expect(minLv[i]!).toBeGreaterThan(minLv[i - 1]!);
   });
 
   it('雾线只能在雾浓度 ≥ 2 的岛上出现，而 M1 确实有这样的岛', () => {

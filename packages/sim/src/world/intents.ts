@@ -15,7 +15,7 @@ import { decodeSpiritCode } from '../spirit/code';
 import { generateWildGenes } from '../spirit/genes';
 import { healSpirit, maxHpOf } from '../spirit/condition';
 import { createSpirit, equipSkills, evolve, formOf, MAX_SKILL_SLOTS } from '../spirit/spirit';
-import { forfeitBattle, joinBattle, startCloudlordBattle, startKeeperBattle, startTutorialBattle, startWildBattle, submitBattleActions } from './battleflow';
+import { forfeitBattle, joinBattle, startCloudlordBattle, startGuardianBattle, startKeeperBattle, startTutorialBattle, startWildBattle, submitBattleActions } from './battleflow';
 import { homeIslandId } from './create';
 import type { WorldEvent } from './events';
 import {
@@ -36,6 +36,7 @@ import { arrivalPoint, gatherNodes, HOME_DOCK } from './layout';
 import type { CharacterState, PlayerRuntime, Rotation, WorldState } from './state';
 import { clockAt, dayOf, TICKS_PER_DAY, TICKS_PER_SECOND } from './time';
 import { sailBlocked, VOYAGE_HURRY_REMAIN, voyageTicks } from './voyage';
+import { effectiveFog } from './progress';
 import { weatherAt } from './weather';
 import { refreshWild } from './wild';
 
@@ -55,6 +56,8 @@ export type Intent =
   | { readonly type: 'joinBattle'; readonly battleId: string }
   /** 在灯塔岛上讨伐云主（M2）。 */
   | { readonly type: 'challengeCloudlord'; readonly cloudlordId: string }
+  /** 挑战灯塔守卫（M3-2）。 */
+  | { readonly type: 'challengeGuardian'; readonly cloudlordId: string }
   | { readonly type: 'tutorialBattle' }
   | { readonly type: 'adoptStarter' }
   | { readonly type: 'build'; readonly building: string; readonly x: number; readonly z: number; readonly rot: Rotation }
@@ -147,11 +150,12 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
     }
 
     case 'sail': {
-      const blocked = sailBlocked(content, p, c, playerId, intent.islandId);
+      const blocked = sailBlocked(content, p, c, playerId, intent.islandId, world);
       if (blocked) return fail(blocked);
       const to = intent.islandId === 'home' ? homeIslandId(playerId) : intent.islandId;
       const island = content.islands.get(to);
-      if (island && island.fogLevel > 0) removeItems(c.backpack, 'lanternFuel', island.fogLevel);
+      const fog = island ? effectiveFog(content, world, island) : 0;
+      if (fog > 0) removeItems(c.backpack, 'lanternFuel', fog);
       const ticks = voyageTicks(content, p.islandId, to, c.tools.skiff);
       p.voyage = { from: p.islandId, to, departTick: world.tick, arriveTick: world.tick + ticks };
       events.push({ t: 'voyageStart', playerId, from: p.islandId, to, departTick: world.tick, arriveTick: world.tick + ticks });
@@ -200,6 +204,11 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
     case 'joinBattle': {
       const err = joinBattle(content, world, playerId, intent.battleId, events);
       return err ? fail(err) : ok();
+    }
+
+    case 'challengeGuardian': {
+      const r = startGuardianBattle(content, world, playerId, intent.cloudlordId, events);
+      return world.battles[r] ? ok() : fail(r);
     }
 
     case 'challengeCloudlord': {
