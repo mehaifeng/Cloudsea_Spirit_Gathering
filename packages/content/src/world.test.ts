@@ -69,3 +69,12 @@ describe('M1 世界内容', () => {
     expect(coreUpgradeCost(3).shells).toBe(1280);
   });
 });
+
+describe('分享码的编号空间（M3-5）', () => {
+  it('建筑 < 64、作物 < 16、技能 < 128（岛屿码 / 队伍码的位宽）', () => {
+    const db = getContent();
+    expect(db.buildings.size).toBeLessThan(64);
+    expect(db.crops.size).toBeLessThan(16);
+    expect(db.skills.size).toBeLessThan(128);
+  });
+});

@@ -243,3 +243,6 @@ body:has(#dialogue:not(.hidden)) #hints { display: none; }
 .gen-block { position: absolute; right: 14px; top: 10px; font-size: 12px; background: none; border: none; color: var(--ink); opacity: .55; cursor: pointer; text-decoration: underline; }
 .gen-block:hover { opacity: .9; }
 #dialogue .panel { position: relative; }
+/* 分享码（M3-5） */
+.code-box { width: 100%; font: 14px/1.5 ui-monospace, Menlo, monospace; padding: 6px 10px; border: 1.5px solid var(--ink); border-radius: var(--wobble-sm); background: var(--paper); color: var(--ink); resize: vertical; box-sizing: border-box; }
+#visit-panel { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; padding: 8px 16px; }

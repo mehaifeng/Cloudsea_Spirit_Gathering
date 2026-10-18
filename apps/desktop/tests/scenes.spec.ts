@@ -175,6 +175,34 @@ const SCENES: Record<string, (win: Page) => Promise<void>> = {
       }
     }
   },
+  share: async (win) => {
+    await win.keyboard.press('Tab');
+    await win.locator('#modal .btn', { hasText: '分享' }).click();
+    await win.locator('#modal .btn', { hasText: '生成我的岛屿码' }).click();
+    const islandCode = await win.locator('#modal textarea[readonly]').first().inputValue();
+    expect(islandCode).toMatch(/^XI-/);
+    await win.locator('#modal textarea[placeholder*="岛屿码"]').fill(islandCode);
+    await win.locator('#modal .btn', { hasText: /生成当前队伍的队伍码/ }).click();
+    const teamCode = await win.locator('#modal textarea[readonly]').nth(1).inputValue();
+    expect(teamCode).toMatch(/^XT-/);
+    await win.locator('#modal textarea[placeholder*="队伍码"]').fill(teamCode);
+    await win.waitForTimeout(200);
+    await shot(win, 'share-a-tab');
+    await win.locator('#modal .btn', { hasText: '参观这座岛' }).click();
+    await win.waitForTimeout(1500);
+    expect(await g<string>(win, 'g.mode()')).toBe('visit');
+    await shot(win, 'share-b-visit');
+    await win.keyboard.press('Escape');
+    await win.waitForTimeout(300);
+    expect(await g<string>(win, 'g.mode()')).toBe('explore');
+    await win.keyboard.press('Tab');
+    await win.locator('#modal .btn', { hasText: '分享' }).click();
+    await win.locator('#modal .btn', { hasText: '挑战这支队伍' }).click();
+    for (let i = 0; i < 40 && (await g<string>(win, 'g.mode()')) !== 'battle'; i++) await win.waitForTimeout(100);
+    await win.waitForTimeout(1500);
+    await shot(win, 'share-c-team-battle');
+    expect(await g<string>(win, 'Object.values(g.world().battles)[0].kind')).toBe('teamCode');
+  },
   guardian: async (win) => {
     await win.waitForTimeout(600);
     await shot(win, 'guardian-a-explore');

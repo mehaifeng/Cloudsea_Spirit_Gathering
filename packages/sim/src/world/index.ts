@@ -17,3 +17,4 @@ export * from './weather';
 export * from './wild';
 export * from './progress';
 export * from './keeperDraw';
+export * from './islandCode';

@@ -4,3 +4,4 @@ export * from './types';
 export * from './breeding';
 export * from './code';
 export * from './condition';
+export * from './teamCode';

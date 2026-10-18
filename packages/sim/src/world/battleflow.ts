@@ -6,7 +6,8 @@ import { EXTRA_ACTION_OFFSET, type BattleAction, type BattleState, type SideActi
 import { createRng, deriveSeed } from '../rng';
 import { isDowned } from '../spirit/condition';
 import { generateWildGenes } from '../spirit/genes';
-import { addExp, createSpirit } from '../spirit/spirit';
+import { addExp, createSpirit, skillPool } from '../spirit/spirit';
+import { decodeTeamCode } from '../spirit/teamCode';
 import type { Spirit } from '../spirit/types';
 import { homeIslandId } from './create';
 import type { WorldEvent } from './events';
@@ -151,9 +152,48 @@ export function startKeeperBattle(content: ContentDb, world: WorldState, playerI
       state: createBattle(content, {
         kind: 'keeper',
         sides: [{ spirits: ready }, { spirits: k.spirits }],
-        baseWeather: weatherAt(world.seed, 'sunPlains', world.tick),
+        baseWeather: weatherAt(world.seed, content.keepers.get(keeperId)!.region, world.tick),
         seed,
       }),
+    },
+    events,
+  );
+}
+
+/**
+ * 队伍码挑战（M3-5，DESIGN 10）：导入别人的队伍，由战斗 AI（困难）操控。友谊战性质：
+ * 不得经验、不得云贝、伤势不带出战斗，只在家园岛上进行。
+ */
+export function startTeamChallenge(content: ContentDb, world: WorldState, playerId: string, code: string, events: WorldEvent[]): string {
+  const p = world.players[playerId]!;
+  const c = world.characters[playerId]!;
+  if (p.battleId) return '已经在战斗中';
+  if (p.islandId !== homeIslandId(playerId)) return '在自己的家园岛上才能进行队伍码挑战';
+  const team = decodeTeamCode(content, code);
+  if (typeof team === 'string') return team;
+  const ready = battleReady(content, c);
+  if (ready.length === 0) return NO_READY_SPIRITS;
+  const opponents = team.map((m, i) => {
+    const line = content.lines.get(m.genes.lineId)!;
+    const s = createSpirit(content, { id: `team-${i}`, ownerId: 'teamCode', genes: m.genes, level: m.level, formIndex: line.forms.findIndex((f) => f.id === m.formId), foreign: true, state: 'party' });
+    const base = skillPool(content, { ...s, learnedSkills: [] });
+    return { ...s, learnedSkills: m.skills.filter((id) => !base.includes(id)), skillSlots: m.skills.length ? [...m.skills] : s.skillSlots };
+  });
+  markSeen(c, opponents.map((s) => s.formId));
+  const id = newId(world, 'b');
+  const seed = deriveSeed(world.seed, `battle:${id}`);
+  return begin(
+    world,
+    {
+      id,
+      kind: 'teamCode',
+      playerId,
+      islandId: p.islandId,
+      wildId: null,
+      keeperId: null,
+      aiSeed: seed,
+      preparedAi: null,
+      state: createBattle(content, { kind: 'teamCode', sides: [{ spirits: ready }, { spirits: opponents }], baseWeather: weatherAt(world.seed, 'sunPlains', world.tick), seed }),
     },
     events,
   );
@@ -365,6 +405,7 @@ function aiActions(content: ContentDb, b: ActiveBattle): SideActions {
 }
 
 function aiFor(b: ActiveBattle) {
+  if (b.kind === 'teamCode') return AI_PRESETS.hard;
   if (b.kind === 'keeper' || b.kind === 'cloudlord' || b.kind === 'guardian') return AI_PRESETS.normal;
   if (b.kind === 'scripted') return AI_PRESETS.easy;
   return AI_PRESETS.wild;
@@ -479,7 +520,9 @@ export function leaveBattles(content: ContentDb, world: WorldState, playerId: st
  */
 export function finishBattle(content: ContentDb, world: WorldState, b: ActiveBattle, events: WorldEvent[]): void {
   const result = resultFor(b.state, 0)!;
-  const exp = expRewards(content, b.state, 0);
+  // 队伍码挑战是友谊战：不得经验、不得云贝、伤势不带出去（M3-5）
+  const friendly = b.kind === 'teamCode' || b.kind === 'friendly';
+  const exp = friendly ? new Map<string, number>() : expRewards(content, b.state, 0);
   const levelUps: string[] = [];
   const ownerOf = new Map(b.state.sides[0].units.map((u) => [u.spiritId, u.ownerId]));
   for (const [id, amount] of exp) {
@@ -491,7 +534,7 @@ export function finishBattle(content: ContentDb, world: WorldState, b: ActiveBat
     c.spirits[id] = next;
   }
   // 伤势延续：玩家絮灵的生命、层数、异常带到下一场（DESIGN 4.8，v0.7）
-  for (const u of b.state.sides[0].units) {
+  for (const u of friendly ? [] : b.state.sides[0].units) {
     const c = world.characters[u.ownerId];
     const s = c?.spirits[u.spiritId];
     if (c && s) c.spirits[u.spiritId] = { ...s, condition: conditionFromUnit(b.state, u) };
@@ -520,7 +563,7 @@ export function finishBattle(content: ContentDb, world: WorldState, b: ActiveBat
     const enemyLevels = b.state.sides[1].units.reduce((a, u) => a + u.level, 0);
     const cl = b.cloudlordId ? content.cloudlords.get(b.cloudlordId) : undefined;
     const guardian = b.kind === 'guardian' && cl ? cl.guardian : undefined;
-    const shells = guardian ? guardian.reward.shells : cl ? cl.reward.shells : b.kind === 'keeper' ? 120 : b.kind === 'scripted' ? 0 : 3 * enemyLevels;
+    const shells = guardian ? guardian.reward.shells : cl ? cl.reward.shells : b.kind === 'keeper' ? 120 : b.kind === 'scripted' || friendly ? 0 : 3 * enemyLevels;
     for (const pid of members) {
       const c = world.characters[pid]!;
       c.stats.battlesWon++;

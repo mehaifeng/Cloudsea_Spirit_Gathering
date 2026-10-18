@@ -191,6 +191,22 @@ export const SCENARIOS: Record<string, { readonly desc: string; run(h: ScenarioH
       await home(h, lateGame(2));
     },
   },
+  share: {
+    desc: '分享页：岛屿码 / 队伍码（家里摆了几座建筑；spec 里生成、参观、挑战）',
+    run: async (h) => {
+      await home(h, (w) => {
+        lateGame(1)(w);
+        const home = w.homes['p1']!;
+        const add = (id: string, type: string, x: number, z: number, crop: string | null = null) =>
+          (home.buildings[id] = { id, type, x, z, rot: 0, built: true, buildProgress: 0, workers: [], crop: crop ? { cropId: crop, progress: 0, seedItem: '' } : null, job: null, eggId: null, occupants: [] });
+        add('sb1', 'field', -8, 4, 'sunWheat');
+        add('sb2', 'field', -8, 8, 'rainBerry');
+        add('sb3', 'nest', 6, 4);
+        add('sb4', 'lamp', 3, -4);
+        add('sb5', 'flowerbed', -3, 6);
+      });
+    },
+  },
   guardian: {
     desc: '灯塔会守卫站在晴原灯塔下的路边（spec 里再挑战他）',
     run: async (h) => {

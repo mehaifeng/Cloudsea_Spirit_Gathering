@@ -16,12 +16,13 @@ function pair(): [Spirit, Spirit] {
 }
 
 describe('繁殖条件', () => {
-  it('需要一雄一雌、同物种、不是外来、不在冷却（v0.7 移除疲惫：受伤的也能繁殖）', () => {
+  it('需要一雄一雌、同物种或属性相生、不是外来、不在冷却（v0.7 移除疲惫：受伤的也能繁殖）', () => {
     const [f, m] = pair();
     expect(breedBlocker(content, f, m, 0)).toBeNull();
     expect(breedBlocker(content, m, { ...m, id: 'm2' }, 0)).toBe('需要一雄一雌');
-    const other = makeSpirit(content, 'eavedrop', 20, { id: 'o' });
-    expect(breedBlocker(content, f, other, 0)).toBe('目前只能同物种繁殖');
+    // 晴与风不相生：不能共鸣繁殖（相生的见 resonance.test.ts）
+    const other = makeSpirit(content, 'kitefluff', 20, { id: 'o' });
+    expect(breedBlocker(content, f, other, 0)).toMatch(/属性不相生/);
     expect(breedBlocker(content, f, { ...m, condition: { hp: 0, stages: {}, timedStages: [], ailment: null } }, 0)).toBeNull();
     expect(breedBlocker(content, f, { ...m, foreign: true }, 0)).toMatch(/外来/);
     expect(breedBlocker(content, f, { ...m, breedReadyTick: 10 }, 0)).toMatch(/冷却/);

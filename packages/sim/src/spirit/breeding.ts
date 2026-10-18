@@ -24,11 +24,19 @@ export interface BreedContext {
   readonly eggId: string;
 }
 
+/** 两只絮灵的主属性是否相生（任一方向）。 */
+export function resonant(content: ContentDb, a: Spirit, b: Spirit): boolean {
+  const ea = content.lines.get(a.genes.lineId)!.element;
+  const eb = content.lines.get(b.genes.lineId)!.element;
+  return GENERATES[ea] === eb || GENERATES[eb] === ea;
+}
+
 /** 两只絮灵能否繁殖；可以返回 null，否则返回原因。 */
 export function breedBlocker(content: ContentDb, a: Spirit, b: Spirit, now: number): string | null {
   if (a.id === b.id) return '需要两只絮灵';
   if (a.genes.sex === b.genes.sex) return '需要一雄一雌';
-  if (a.genes.lineId !== b.genes.lineId) return '目前只能同物种繁殖';
+  // 共鸣繁殖（M3-5，DESIGN 4.5）：不同物种只能在主属性相生时繁殖
+  if (a.genes.lineId !== b.genes.lineId && !resonant(content, a, b)) return '属性不相生，不能共鸣繁殖（只有同物种或相生属性的物种之间可以）';
   for (const s of [a, b]) {
     const name = s.nickname ?? formOf(content, s).form.name;
     if (s.foreign) return `${name} 是外来絮灵，不能繁殖`;
@@ -39,7 +47,9 @@ export function breedBlocker(content: ContentDb, a: Spirit, b: Spirit, now: numb
 }
 
 function inheritPart(rng: Rng, content: ContentDb, lineId: string, slot: PartSlot, father: PartGene, mother: PartGene, generating: boolean): PartGene {
-  const from = rng.chance(0.5) ? father : mother;
+  let from = rng.chance(0.5) ? father : mother;
+  // 共鸣繁殖：父方的零件母方物种长不出来时，这一槽按母方遗传（物种随母方）
+  if (from === father && !content.lines.get(lineId)!.partPool[slot].some((e) => e.part === father.partId)) from = mother;
   let gene: PartGene = { partId: from.partId, mutated: from.mutated && rng.chance(BREEDING.keepMutatedChance) };
   const mutateChance = generating ? BREEDING.partMutationChanceGenerating : BREEDING.partMutationChance;
   if (rng.chance(mutateChance)) {

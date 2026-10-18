@@ -21,6 +21,11 @@ import {
   breedBlocker,
   buildingSlots,
   chapterOf,
+  decodeIslandCode,
+  encodeIslandCode,
+  encodeTeamCode,
+  islandLayoutOf,
+  type IslandLayout,
   effectiveFog,
   islandKeeper,
   islandPresent,
@@ -71,6 +76,8 @@ export interface Ctx {
   sail(islandId: string): Promise<boolean>;
   /** 联机（M2）。 */
   readonly net: NetCtx;
+  /** 参观岛屿码（M3-5）：只看不改。 */
+  visitIsland(layout: IslandLayout): void;
   /** 灵性模式（M3-4）：本局的调用统计；设置改了以后让房主同步世界的模式。 */
   readonly spirit: { stats(): { calls: number; fallbacks: number; lastError: string | null } | null; sync(): Promise<void> };
 }
@@ -106,12 +113,13 @@ async function doAndRefresh(ctx: Ctx, intent: Intent, ok?: string): Promise<bool
 
 // =================================================================== 主菜单
 
-type Tab = 'spirits' | 'bag' | 'codex' | 'orders' | 'net' | 'settings';
+type Tab = 'spirits' | 'bag' | 'codex' | 'orders' | 'share' | 'net' | 'settings';
 const TABS: Array<[Tab, string]> = [
   ['spirits', '絮灵'],
   ['bag', '背包'],
   ['codex', '图鉴'],
   ['orders', '订单'],
+  ['share', '分享'],
   ['net', '联机'],
   ['settings', '设置'],
 ];
@@ -120,7 +128,7 @@ export function openMenu(ctx: Ctx, tab: Tab = 'spirits'): void {
   let current = tab;
   const render = (): HTMLElement => {
     const tabs = h('div', { class: 'tabs' }, ...TABS.map(([id, label]) => button(label, () => ((current = id), ctx.ui.refresh(true)), { class: id === current ? 'selected' : '' })));
-    const body = current === 'spirits' ? spiritsTab(ctx) : current === 'bag' ? bagTab(ctx) : current === 'codex' ? codexTab(ctx) : current === 'orders' ? ordersTab(ctx) : current === 'net' ? netTab(ctx) : settingsTab(ctx);
+    const body = current === 'spirits' ? spiritsTab(ctx) : current === 'bag' ? bagTab(ctx) : current === 'codex' ? codexTab(ctx) : current === 'orders' ? ordersTab(ctx) : current === 'net' ? netTab(ctx) : current === 'share' ? shareTab(ctx) : settingsTab(ctx);
     return frame('菜单', ctx, tabs, body);
   };
   ctx.ui.openModal(render);
@@ -431,6 +439,62 @@ function settingsTab(ctx: Ctx): HTMLElement {
   );
 }
 
+/** 分享（M3-5，DESIGN 10）：岛屿码（导出 / 参观）、队伍码（导出 / 挑战）。码都是纯文本，不经过服务器。 */
+const shareDraft = { island: '', team: '', myIsland: '', myTeam: '' };
+
+function codeBox(value: string, onCopy: () => void): HTMLElement {
+  const ta = h('textarea', { readonly: true, rows: '4', class: 'code-box' }) as HTMLTextAreaElement;
+  ta.value = value;
+  return h('div', { class: 'col' }, ta, h('div', { class: 'row' }, button('复制', () => {
+    ta.select();
+    void navigator.clipboard?.writeText(value).then(onCopy, onCopy);
+  }, { class: 'small' })));
+}
+
+function pasteBox(key: 'island' | 'team', placeholder: string): HTMLTextAreaElement {
+  const ta = h('textarea', { rows: '3', class: 'code-box', placeholder }) as HTMLTextAreaElement;
+  ta.value = shareDraft[key];
+  ta.addEventListener('input', () => (shareDraft[key] = ta.value));
+  return ta;
+}
+
+function shareTab(ctx: Ctx): HTMLElement {
+  const w = ctx.world();
+  const c = me(ctx);
+  const atHomeNow = w.players[PLAYER_ID]!.islandId === homeIslandId(PLAYER_ID);
+  const party = c.party.map((id) => c.spirits[id]).filter((s): s is Spirit => !!s && !s.blighted);
+  const islandIn = pasteBox('island', '把别人的岛屿码粘贴到这里（XI-…）');
+  const teamIn = pasteBox('team', '把别人的队伍码粘贴到这里（XT-…）');
+  const copied = () => ctx.ui.toast('已复制');
+  return h(
+    'div',
+    { class: 'col' },
+    h('div', { class: 'muted' }, '码是一段文字，复制给朋友就行，不经过任何服务器。'),
+    h('h3', {}, '岛屿码'),
+    h('div', { class: 'row' }, button('生成我的岛屿码', () => ((shareDraft.myIsland = encodeIslandCode(ctx.content, islandLayoutOf(w.homes[PLAYER_ID]!))), ctx.ui.refresh()))),
+    shareDraft.myIsland ? codeBox(shareDraft.myIsland, copied) : null,
+    islandIn,
+    h('div', { class: 'row' }, button('参观这座岛', () => {
+      const layout = decodeIslandCode(ctx.content, islandIn.value);
+      if (typeof layout === 'string') return ctx.ui.toast(layout, 'error');
+      ctx.ui.closeAllModals();
+      ctx.visitIsland(layout);
+    })),
+    h('h3', {}, '队伍码'),
+    h('div', { class: 'row' }, button(`生成当前队伍的队伍码（${Math.min(6, party.length)} 只）`, () => ((shareDraft.myTeam = encodeTeamCode(ctx.content, party)), ctx.ui.refresh()), { disabled: party.length === 0 })),
+    shareDraft.myTeam ? codeBox(shareDraft.myTeam, copied) : null,
+    teamIn,
+    h(
+      'div',
+      { class: 'row' },
+      button('挑战这支队伍', async () => {
+        if (await ctx.act({ type: 'teamChallenge', code: teamIn.value })) ctx.ui.closeAllModals();
+      }, { class: 'primary', disabled: !atHomeNow }),
+      h('span', { class: 'muted' }, atHomeNow ? '对手由战斗 AI 操控；友谊战，不得经验和云贝，伤势也不会带出来。' : '回到家园岛才能挑战。'),
+    ),
+  );
+}
+
 /** 灵性模式设置（M3-4，DESIGN 11.5）：key 只能写进去，读不出来（铁律 8）。 */
 let llmCache: LlmPublicSettings | null = null;
 let llmLoading = false;
@@ -627,12 +691,18 @@ function breedingSection(ctx: Ctx, b: BuildingInstance): HTMLElement {
   }, { class: 'primary', disabled: true });
   const update = () => {
     if (sel.length < 2) {
-      status.textContent = `选两只同物种、一雄一雌的絮灵（已选 ${sel.length}）`;
+      status.textContent = `选一雄一雌两只絮灵：同物种，或主属性相生的不同物种（共鸣繁殖）（已选 ${sel.length}）`;
       go.setAttribute('aria-disabled', 'true');
       return;
     }
-    const why = breedBlocker(ctx.content, c.spirits[sel[0]!]!, c.spirits[sel[1]!]!, w.tick);
-    status.textContent = why ?? '可以繁殖。后代会遗传双亲的零件、资质与配色。';
+    const [sa, sb] = [c.spirits[sel[0]!]!, c.spirits[sel[1]!]!];
+    const why = breedBlocker(ctx.content, sa, sb, w.tick);
+    const mother = sa.genes.sex === 'female' ? sa : sb;
+    status.textContent =
+      why ??
+      (sa.genes.lineId !== sb.genes.lineId
+        ? `可以共鸣繁殖：后代是${ctx.content.lines.get(mother.genes.lineId)!.name.replace(/线$/, '')}（随母方），零件更容易突变，偶尔会带上双属性。`
+        : '可以繁殖。后代会遗传双亲的零件、资质与配色。');
     if (why) go.setAttribute('aria-disabled', 'true');
     else go.removeAttribute('aria-disabled');
   };

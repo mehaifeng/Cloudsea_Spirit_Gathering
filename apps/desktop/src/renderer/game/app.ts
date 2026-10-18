@@ -5,8 +5,11 @@ import {
   createRng,
   createSpirit,
   createTerrain,
+  footprint,
   generateWildGenes,
   homeIslandId,
+  homeTerrain,
+  type IslandLayout,
   sailBlocked,
   type ActiveBattle,
   type BattleEvent,
@@ -14,7 +17,7 @@ import {
   type WorldEvent,
   type WorldState,
 } from '@cloudsea/sim';
-import { buildIslandMesh, CreatureView, Environment, lookFromSpirit } from '@cloudsea/render';
+import { buildIslandMesh, CreatureView, Environment, lookFromSpirit, makeBuildingView } from '@cloudsea/render';
 import { button, focusFirst, h } from '@cloudsea/ui';
 import * as THREE from 'three';
 import { battleUnitSpirit, BattleView } from './battle';
@@ -38,7 +41,7 @@ import { Tutorial } from './tutorial';
 import { UiRoot } from './uiRoot';
 
 /** boarding / landing：上下船表演；transition：探索 → 战斗的转场（v0.6）。 */
-type Mode = 'title' | 'explore' | 'build' | 'battle' | 'sailing' | 'cutscene' | 'voyage' | 'boarding' | 'landing' | 'transition' | 'gallery';
+type Mode = 'title' | 'explore' | 'build' | 'battle' | 'sailing' | 'cutscene' | 'voyage' | 'boarding' | 'landing' | 'transition' | 'gallery' | 'visit';
 
 /** 标题画面背景：一座小岛和几只随机絮灵，镜头慢慢绕。 */
 class TitleScene {
@@ -164,6 +167,7 @@ export class App {
         steamLobby: () => this.session?.steamLobby ?? null,
         leave: () => void this.leaveAsGuest(),
       },
+      visitIsland: (layout) => this.showVisit(layout),
       spirit: {
         stats: () => (this.session?.spirit ? { calls: this.session.spirit.calls, fallbacks: this.session.spirit.fallbacks, lastError: this.session.spirit.lastError } : null),
         sync: () => this.session?.syncAiMode() ?? Promise.resolve(),
@@ -993,6 +997,8 @@ export class App {
       if (this.mode === 'explore') this.hud.update(this.world, this.explore.nearest, 'explore', this.ui.capturing);
       this.hud.nameplates(this.mode === 'explore' ? this.explore.nameplates().map((n) => ({ ...n, screen: this.explore!.project(n.pos, innerWidth, innerHeight) })) : []);
       this.tutorial?.update(this.world, this.explore);
+    } else if (this.mode === 'visit') {
+      if (input.hit('Escape')) this.endVisit();
     } else if ((this.mode === 'boarding' || this.mode === 'landing') && this.explore) {
       this.explore.update(dt, null, (x, z, yaw) => this.session?.client.fire({ type: 'move', x, z, yaw }), false);
     } else if (this.mode === 'transition' && this.explore) {
@@ -1052,7 +1058,66 @@ export class App {
     }
   }
 
+  // ---------------------------------------------------------------- 参观岛屿码（M3-5）
+
+  private visit: { scene: THREE.Scene; env: Environment; t: number; radius: number; panel: HTMLElement } | null = null;
+
+  /** 参观别人的岛（岛屿码）：只看不改，镜头绕岛慢慢转；Esc 或“回去”返回。 */
+  private showVisit(layout: IslandLayout): void {
+    if (this.mode !== 'explore') return;
+    this.ui.closeAllModals();
+    const scene = new THREE.Scene();
+    const env = new Environment(scene, { farIslands: false });
+    const terrain = homeTerrain(layout.seed, layout.coreLevel);
+    scene.add(buildIslandMesh(terrain, { grassHue: 0.25, clear: () => false }));
+    let n = 0;
+    for (const b of layout.buildings) {
+      const def = this.content.buildings.get(b.type);
+      if (!def) continue;
+      const fp = footprint(def, b.rot);
+      const y = Math.max(terrain.height(b.x, b.z), terrain.height(b.x + fp.w, b.z), terrain.height(b.x, b.z + fp.d), terrain.height(b.x + fp.w, b.z + fp.d));
+      const v = makeBuildingView(b.type, def.size.w, def.size.d, n++ * 7919 + 13);
+      v.group.position.set(b.x + fp.w / 2, y, b.z + fp.d / 2);
+      v.group.rotation.y = -b.rot * (Math.PI / 2);
+      v.update({ built: true, progress: 1, crop: b.crop ? { id: b.crop, growth: 0.85 } : null, working: true }, 0);
+      for (const g of v.glows) env.glowMaterials.add(g);
+      scene.add(v.group);
+    }
+    const panel = h(
+      'div',
+      { id: 'visit-panel', class: 'panel' },
+      h('b', {}, '参观 · 别人的岛'),
+      h('span', { class: 'muted' }, `岛核 ${layout.coreLevel} 级 · ${n} 座建筑`),
+      button('回去（Esc）', () => this.endVisit(), { class: 'small' }),
+    );
+    this.ui.layer.append(panel);
+    this.hud.clear();
+    this.visit = { scene, env, t: 0, radius: 18 + layout.coreLevel * 2.5, panel };
+    this.mode = 'visit';
+  }
+
+  private endVisit(): void {
+    if (!this.visit) return;
+    this.visit.panel.remove();
+    this.visit.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      m.geometry?.dispose();
+    });
+    this.visit = null;
+    this.mode = 'explore';
+  }
+
   private render(): void {
+    if (this.mode === 'visit' && this.visit) {
+      const v = this.visit;
+      v.t += 1 / 60;
+      const a = v.t * 0.12;
+      this.camera.position.set(Math.sin(a) * v.radius * 1.5, v.radius * 0.75, Math.cos(a) * v.radius * 1.5);
+      this.camera.lookAt(0, 1, 0);
+      v.env.update(1 / 60, v.t, this.camera, new THREE.Vector3());
+      this.renderer.render(v.scene, this.camera);
+      return;
+    }
     if (this.mode === 'gallery' && this.gallery) {
       const gl = this.gallery;
       gl.t += 1 / 60;

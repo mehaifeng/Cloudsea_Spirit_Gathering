@@ -17,7 +17,7 @@ import { decodeSpiritCode } from '../spirit/code';
 import { generateWildGenes } from '../spirit/genes';
 import { healSpirit, maxHpOf } from '../spirit/condition';
 import { createSpirit, equipSkills, evolve, formOf, MAX_SKILL_SLOTS } from '../spirit/spirit';
-import { forfeitBattle, joinBattle, startCloudlordBattle, startGuardianBattle, startKeeperBattle, startTutorialBattle, startWildBattle, submitBattleActions } from './battleflow';
+import { forfeitBattle, joinBattle, startCloudlordBattle, startGuardianBattle, startKeeperBattle, startTeamChallenge, startTutorialBattle, startWildBattle, submitBattleActions } from './battleflow';
 import { homeIslandId } from './create';
 import type { WorldEvent } from './events';
 import {
@@ -90,6 +90,8 @@ export type Intent =
   | { readonly type: 'gift'; readonly keeperId: string; readonly item: string }
   | { readonly type: 'challenge'; readonly keeperId: string }
   | { readonly type: 'importSpirit'; readonly code: string }
+  /** 队伍码挑战（M3-5）。 */
+  | { readonly type: 'teamChallenge'; readonly code: string }
   | { readonly type: 'pause'; readonly paused: boolean }
   /** 灵性模式（M3-4，只有房主能发）：开关；把 LLM 生成的话 / 计划 / 记忆摘要交给 sim 校验后生效。 */
   | { readonly type: 'setAiMode'; readonly mode: 'default' | 'spirit' }
@@ -657,6 +659,12 @@ export function applyIntent(content: ContentDb, world: WorldState, playerId: str
       if (!nearKeeper(content, world, p, playerId, intent.keeperId)) return fail('不在旁边');
       const r = startKeeperBattle(content, world, playerId, intent.keeperId, events);
       return world.battles[r] ? ok() : fail(r);
+    }
+
+    case 'teamChallenge': {
+      if (typeof intent.code !== 'string' || intent.code.length > 2000) return fail('队伍码无效');
+      const err = startTeamChallenge(content, world, playerId, intent.code, events);
+      return world.battles[err] ? ok() : fail(err);
     }
 
     case 'importSpirit': {
