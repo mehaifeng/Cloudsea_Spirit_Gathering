@@ -5,7 +5,7 @@ import type { SideActions } from '../battle/types';
 import { makeSpirit } from '../testing';
 import { createCharacter, createWorld, homeIslandId, joinWorld } from './create';
 import { applyIntent, type Intent } from './intents';
-import { gatherNodes } from './layout';
+import { gatherNodes, homeTerrain } from './layout';
 import { sailBlocked } from './voyage';
 import { loadCharacter, loadWorld, saveWorld, SaveError, WORLD_SAVE_VERSION, __migrate } from './save';
 import type { WorldState } from './state';
@@ -537,6 +537,24 @@ describe('存档', () => {
     const b = loaded.homes['p1']!.buildings['b']!;
     const overlap = Math.abs(a.x - b.x) < 3 && Math.abs(a.z - b.z) < 3;
     expect(overlap).toBe(false);
+  });
+
+  it('世界存档 v6 → v7（v0.10）：落进新池塘的建筑挪到空位，站在水里的玩家挪回码头边', () => {
+    const w = newGame(5);
+    const v6 = JSON.parse(JSON.stringify(saveWorld(w).world));
+    v6.version = 6;
+    const terrain = homeTerrain(w.homes['p1']!.seed, 1);
+    const pond = terrain.params.ponds![0]!;
+    const px = Math.floor(pond.x) - 1;
+    const pz = Math.floor(pond.z) - 1;
+    v6.world.homes.p1.buildings.a = { id: 'a', type: 'nest', x: px, z: pz, rot: 0, built: true, buildProgress: 600, workers: [], crop: null, job: null, eggId: null, occupants: [] };
+    v6.world.players.p1.x = pond.x;
+    v6.world.players.p1.z = pond.z;
+    const loaded = loadWorld(v6);
+    const a = loaded.homes['p1']!.buildings['a']!;
+    expect(a.x !== px || a.z !== pz).toBe(true);
+    for (let dx = 0; dx < 3; dx++) for (let dz = 0; dz < 3; dz++) expect(terrain.isWater(a.x + dx + 0.5, a.z + dz + 0.5)).toBe(false);
+    expect(terrain.waterDistance(loaded.players['p1']!.x, loaded.players['p1']!.z)).toBeGreaterThan(1);
   });
 
   it('拒绝更新版本与损坏的存档；迁移链按版本逐级执行', () => {

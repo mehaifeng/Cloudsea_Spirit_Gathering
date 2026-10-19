@@ -1,5 +1,5 @@
 import { fbm, hash2, WATER_LEVEL, type Terrain } from '@cloudsea/sim';
-import { bedColor, foamMaterial, waterMaterial } from './water';
+import { bedColor, waterMaterial } from './water';
 import * as THREE from 'three';
 import { mulberry } from './util';
 
@@ -39,6 +39,13 @@ export function buildIslandMesh(terrain: Terrain, o: IslandMeshOptions = {}): TH
     pos.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, d[0]!, d[1]!, d[2]!);
     for (let k = 0; k < 3; k++) col.push(cl.r, cl.g, cl.b);
   };
+  // 水面（v0.10）：凡是有顶点在水里的地形三角形，都在水面高度盖一片同样的三角形。
+  // 水面和地形用同一套网格，岸线 = 地形穿出水面的那条线，岸边不会露出水面下的坑
+  const water: number[] = [];
+  const wetTri = (a: number[], b: number[], d: number[]) => {
+    if (!terrain.isWater(a[0]!, a[2]!) && !terrain.isWater(b[0]!, b[2]!) && !terrain.isWater(d[0]!, d[2]!)) return;
+    for (const p of [a, b, d]) water.push(p[0]!, WATER_LEVEL, p[2]!);
+  };
   const rings: number[][][] = [];
   for (let i = 0; i <= N; i++) {
     const row: number[][] = [];
@@ -62,14 +69,15 @@ export function buildIslandMesh(terrain: Terrain, o: IslandMeshOptions = {}): TH
     const n = fbm(x * 0.35 + 9, z * 0.35 - 4, seed);
     const rr = Math.hypot(x, z) / terrain.rim(Math.atan2(z, x));
     if (rr > 0.86) return c.setHSL(0.09, 0.32, 0.5 + (n - 0.5) * 0.08); // 岛缘露出泥土
-    // 水底与岸边沙地
-    if (y < WATER_LEVEL + 0.05) return bedColor(c, WATER_LEVEL - y, n);
-    if (terrain.waterDistance(x, z) < 1.1) return c.setHSL(0.11, 0.38, 0.72 + (n - 0.5) * 0.06);
+    // 水底（v0.11：岸上不再有一圈沙地，草一直长到水边）
+    // 跨在岸线上的三角形露出水面的部分很显眼：只有整个在水下的才用池底色
+    if (Math.max(a[1]!, b[1]!, d[1]!) < WATER_LEVEL + 0.02) return bedColor(c, WATER_LEVEL - y, n);
     // 陡坡露出岩石
     ab.set(b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!);
     ad.set(d[0]! - a[0]!, d[1]! - a[1]!, d[2]! - a[2]!);
     const ny = Math.abs(ab.cross(ad).normalize().y);
-    if (ny < 0.58) return c.setHSL(0.07 + (n - 0.5) * 0.02, 0.14, 0.5 + (n - 0.5) * 0.1);
+    // 岸边那一小段陡坡也是草（否则水边会有一圈灰色的“岩石”）
+    if (ny < 0.58 && terrain.waterDistance(x, z) > 1.5) return c.setHSL(0.07 + (n - 0.5) * 0.02, 0.14, 0.5 + (n - 0.5) * 0.1);
     return c.setHSL(hue + (n - 0.5) * 0.07, 0.34 + (n - 0.5) * 0.1, 0.45 + (n - 0.5) * 0.1 + y * 0.012);
   };
   for (let i = 1; i <= N; i++) {
@@ -80,7 +88,11 @@ export function buildIslandMesh(terrain: Terrain, o: IslandMeshOptions = {}): TH
       const cc = rings[i]![j]!;
       const d = rings[i]![j2]!;
       tri(a, d, cc, topColor(a, d, cc));
-      if (i > 1) tri(a, b, d, topColor(a, b, d));
+      wetTri(a, d, cc);
+      if (i > 1) {
+        tri(a, b, d, topColor(a, b, d));
+        wetTri(a, b, d);
+      }
     }
   }
   const rock = (k: number, j: number): THREE.Color => {
@@ -162,50 +174,94 @@ export function buildIslandMesh(terrain: Terrain, o: IslandMeshOptions = {}): TH
     grass.receiveShadow = true;
     group.add(grass, flow);
   }
-  const water = buildWater(terrain);
-  if (water) group.add(water);
+  if (water.length) {
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute('position', new THREE.Float32BufferAttribute(water, 3));
+    wg.computeVertexNormals();
+    const wm = new THREE.Mesh(wg, waterMaterial);
+    wm.receiveShadow = true;
+    wm.renderOrder = 2;
+    group.add(wm);
+    group.add(buildShore(terrain, (o.grass ?? 1) > 0));
+  }
   return group;
 }
 
 
-function buildWater(terrain: Terrain): THREE.Object3D | null {
-  const { ponds = [], streams = [] } = terrain.params;
-  if (ponds.length === 0 && streams.length === 0) return null;
+/**
+ * 岸（v0.10，v0.11 去掉岸边泡沫与成圈的石头）：水边零散的几簇石头和芦苇，不围成一圈。
+ * 只是表现，不挡路（不能下水由探索层的碰撞负责）；decor = false（远景岛）时什么都不放。
+ */
+function buildShore(terrain: Terrain, decor: boolean): THREE.Object3D {
+  const { ponds = [], streams = [], seed } = terrain.params;
   const g = new THREE.Group();
-  for (const p of ponds) {
-    // 细分的圆面（几圈同心环），顶点着色器里起伏
-    const m = new THREE.Mesh(new THREE.RingGeometry(0.001, p.radius * 1.12, 28, 6).rotateX(-Math.PI / 2), waterMaterial);
-    m.position.set(p.x, WATER_LEVEL, p.z);
+  if (!decor) return g;
+  const rnd = mulberry(seed * 31 + 5);
+  const stone = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+  const reedMat = new THREE.MeshStandardMaterial({ color: 0x6f9a4a, flatShading: true, roughness: 1 });
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x8a6440, flatShading: true, roughness: 1 });
+  const c = new THREE.Color();
+  const rockAt = (x: number, z: number, size: number) => {
+    const geo = new THREE.DodecahedronGeometry(size, 0);
+    const col: number[] = [];
+    for (let k = 0; k < geo.attributes['position']!.count; k++) {
+      c.setHSL(0.08 + rnd() * 0.03, 0.08 + rnd() * 0.06, 0.55 + rnd() * 0.12);
+      col.push(c.r, c.g, c.b);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const m = new THREE.Mesh(geo, stone);
+    m.scale.set(1, 0.55 + rnd() * 0.3, 0.8 + rnd() * 0.4);
+    m.rotation.y = rnd() * 6;
+    m.position.set(x, terrain.height(x, z) + size * 0.2, z);
+    m.castShadow = true;
     m.receiveShadow = true;
-    m.renderOrder = 2;
     g.add(m);
-    // 岸边泡沫：岸线附近一圈（岸外的部分被地形挡住）
-    const foam = new THREE.Mesh(new THREE.RingGeometry(p.radius * 0.86, p.radius * 1.05, 36, 1).rotateX(-Math.PI / 2), foamMaterial);
-    foam.position.set(p.x, WATER_LEVEL + 0.012, p.z);
-    foam.renderOrder = 3;
-    g.add(foam);
+  };
+  const reedsAt = (x: number, z: number) => {
+    const y = terrain.height(x, z);
+    for (let k = 0; k < 5; k++) {
+      const h = 0.6 + rnd() * 0.5;
+      const r = new THREE.Mesh(new THREE.ConeGeometry(0.025, h, 3).translate(0, h / 2, 0), reedMat);
+      r.position.set(x + (rnd() - 0.5) * 0.35, y - 0.05, z + (rnd() - 0.5) * 0.35);
+      r.rotation.set((rnd() - 0.5) * 0.25, 0, (rnd() - 0.5) * 0.25);
+      if (k % 2 === 0) {
+        const head = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.16, 4), headMat);
+        head.position.y = h - 0.05;
+        r.add(head);
+      }
+      g.add(r);
+    }
+  };
+  for (const p of ponds) {
+    // 两三簇：一簇芦苇贴着水边，旁边散两三块石头
+    const n = 2 + Math.floor(rnd() * 2);
+    const a0 = rnd() * Math.PI * 2;
+    for (let k = 0; k < n; k++) {
+      const a = a0 + (k / n) * Math.PI * 2 + (rnd() - 0.5) * 1.2;
+      const at = (da: number, dd: number) => ({ x: p.x + Math.cos(a + da) * (p.radius + dd), z: p.z + Math.sin(a + da) * (p.radius + dd) });
+      const r = at(0, 0.05);
+      reedsAt(r.x, r.z);
+      for (let j = 0, m = 1 + Math.floor(rnd() * 3); j < m; j++) {
+        const s = at((rnd() - 0.5) * (1.4 / p.radius), 0.15 + rnd() * 0.5);
+        rockAt(s.x, s.z, 0.12 + rnd() * 0.2);
+      }
+    }
   }
   for (const s of streams) {
     for (let i = 0; i < s.points.length - 1; i++) {
       const a = s.points[i]!;
       const b = s.points[i + 1]!;
       const len = Math.hypot(b.x - a.x, b.z - a.z);
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(s.width * 1.15, len + s.width, 4, Math.max(2, Math.round(len))).rotateX(-Math.PI / 2), waterMaterial);
-      m.position.set((a.x + b.x) / 2, WATER_LEVEL, (a.z + b.z) / 2);
-      m.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
-      m.renderOrder = 2;
-      g.add(m);
-      // 两岸泡沫
-      for (const side of [-1, 1]) {
-        const f = new THREE.Mesh(new THREE.PlaneGeometry(0.35, len + s.width * 0.6).rotateX(-Math.PI / 2), foamMaterial);
-        f.position.set(0, 0.012, 0);
-        f.position.x = (side * s.width * 0.5);
-        const holder = new THREE.Group();
-        holder.position.set((a.x + b.x) / 2, WATER_LEVEL, (a.z + b.z) / 2);
-        holder.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
-        holder.add(f);
-        f.renderOrder = 3;
-        g.add(holder);
+      const nx = -(b.z - a.z) / len;
+      const nz = (b.x - a.x) / len;
+      for (let k = 0; k < Math.round(len / 5); k++) {
+        const t = rnd();
+        const side = rnd() < 0.5 ? -1 : 1;
+        const off = (s.width / 2) * (1.06 + rnd() * 0.2) * side;
+        const x = a.x + (b.x - a.x) * t + nx * off;
+        const z = a.z + (b.z - a.z) * t + nz * off;
+        if (rnd() < 0.25) reedsAt(x, z);
+        else rockAt(x, z, 0.14 + rnd() * 0.2);
       }
     }
   }

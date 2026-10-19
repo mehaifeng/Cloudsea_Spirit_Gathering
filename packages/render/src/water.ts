@@ -49,7 +49,7 @@ export function patchWaterTint(m: THREE.MeshStandardMaterial): THREE.MeshStandar
 
 /** 水面材质：顶点波动 + 边缘提亮。 */
 export const waterMaterial = (() => {
-  const m = new THREE.MeshStandardMaterial({ color: 0x7fbfd8, emissive: 0x2f6f88, emissiveIntensity: 0.18, roughness: 0.12, metalness: 0.05, transparent: true, opacity: 0.74, flatShading: true, depthWrite: false });
+  const m = new THREE.MeshStandardMaterial({ color: 0x7fbfd8, emissive: 0x2f6f88, emissiveIntensity: 0.18, roughness: 0.12, metalness: 0.05, transparent: true, opacity: 0.84, flatShading: true, depthWrite: false });
   m.onBeforeCompile = (shader) => {
     shader.uniforms['uTime'] = waterUniforms.uTime;
     shader.vertexShader = shader.vertexShader
@@ -67,22 +67,6 @@ export const waterMaterial = (() => {
       .replace('#include <dithering_fragment>', '#include <dithering_fragment>\ngl_FragColor.rgb += vec3(0.9, 0.97, 1.0) * smoothstep(0.03, 0.07, vWave) * 0.35;');
   };
   m.customProgramCacheKey = () => 'water-surface';
-  return m;
-})();
-
-/** 岸边泡沫：沿着形状的一圈白带，透明度随时间与位置起伏。 */
-export const foamMaterial = (() => {
-  const m = new THREE.MeshBasicMaterial({ color: 0xf6fbff, transparent: true, opacity: 0.55, depthWrite: false });
-  m.onBeforeCompile = (shader) => {
-    shader.uniforms['uTime'] = waterUniforms.uTime;
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vFoamW;')
-      .replace('#include <project_vertex>', '#include <project_vertex>\nvFoamW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nvarying vec3 vFoamW;')
-      .replace('#include <dithering_fragment>', '#include <dithering_fragment>\nfloat f = 0.5 + 0.5 * sin(vFoamW.x * 4.0 + vFoamW.z * 3.0 + uTime * 1.5);\ngl_FragColor.a *= 0.35 + 0.65 * f;');
-  };
-  m.customProgramCacheKey = () => 'water-foam';
   return m;
 })();
 

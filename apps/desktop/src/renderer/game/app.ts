@@ -24,7 +24,7 @@ import { languageRow } from './panels';
 import * as THREE from 'three';
 import { battleUnitSpirit, BattleView } from './battle';
 import { Cutscene, type Shot } from './cinematic';
-import { ambushShots, arrivalShots, keeperIntroShots, openingShots } from './cutscenes';
+import { ambushShots, arrivalShots, keeperIntroShots, openingShots, repairShots } from './cutscenes';
 import { SCENARIOS, type ScenarioHost } from './scenarios';
 import { VoyageView } from './voyageView';
 import { arrivalPoint, CLOUDLORD_SPOT, HOME_DOCK } from '@cloudsea/sim';
@@ -245,7 +245,7 @@ export class App {
       this.sceneStarted = true;
       void this.showJoin(panel, '客人', qs.get('join')!);
     }
-    // 测试模式的场景直达：?test=1&scene=swim
+    // 测试模式的场景直达：?test=1&scene=shore
     const scene = this.testMode ? new URLSearchParams(location.search).get('scene') : null;
     if (scene && !this.sceneStarted) {
       this.sceneStarted = true;
@@ -617,6 +617,20 @@ export class App {
     this.playCutscene('ambush', ambushShots(ex, 'ambusher'), () => this.transitionToBattle(id, focus, () => ex.removeActor('ambusher')));
   }
 
+  /**
+   * 首战之后的商队修船（v0.10）：回到家园岛探索、引导第 3 步、还没看过时播一次。
+   * 对话框还开着（例如战斗结算）就等它关掉。老存档停在第 3 步的读档后也会补播。
+   */
+  private maybeRepairCutscene(): void {
+    const c = this.world?.characters[PLAYER_ID];
+    const ex = this.explore;
+    if (!c || !ex || !ex.isHome || this.cutscene || this.ui.capturing) return;
+    if (c.tutorial.done || c.tutorial.step !== 3 || c.seenCutscenes.includes('repair')) return;
+    ex.repairHold = true;
+    const talk = { say: (who: string, lines: readonly string[]) => this.ui.say(who, lines), open: () => this.ui.dialogueOpen };
+    this.playCutscene('repair', repairShots(ex, talk), () => ex.endRepair());
+  }
+
   /** 探索 → 战斗：镜头向对手推近、纸色淡出，然后进战斗（战斗镜头从对手身边拉回）。 */
   private transitionToBattle(id: string, focus: () => THREE.Vector3 | null, cleanup: (() => void) | null = null): void {
     if (!this.explore) return;
@@ -960,6 +974,7 @@ export class App {
       fastForward: (ticks: number) => this.fastForward(ticks),
       setCamera: (yaw: number, pitch: number, dist: number) => this.scenarioHost().setCamera(yaw, pitch, dist),
       dialogueOpen: () => this.ui.dialogueOpen,
+      closeDialogues: () => this.ui.skipDialogues(),
       voyageProgress: () => this.voyage?.progress ?? null,
       modalOpen: () => this.ui.modalOpen,
       /** v0.6：场景直达、按步推进、出航（含上船）、玩家状态。 */
@@ -970,7 +985,7 @@ export class App {
       skipCutscene: () => this.cutscene?.skip(),
       player: () => {
         const P = this.explore?.player;
-        return P ? { x: P.x, z: P.z, y: P.feetY, yaw: P.yaw, swim: P.swim, swimming: P.swimming, airborne: P.airborne, scripted: this.explore!.scripted } : null;
+        return P ? { x: P.x, z: P.z, y: P.feetY, yaw: P.yaw, airborne: P.airborne, scripted: this.explore!.scripted, shore: this.explore!.terrain.waterDistance(P.x, P.z) } : null;
       },
       battlePositions: () => this.battle?.positions() ?? null,
       buildCursor: () => this.build?.cursorScreen() ?? null,
@@ -984,6 +999,7 @@ export class App {
         this.frozen = on;
       },
       cutsceneTime: () => this.cutscene?.elapsed ?? null,
+      skiffWrecked: () => this.explore?.skiffWrecked ?? null,
       /** 镜头（手柄测试用，M4-2）。 */
       camera: () => (this.explore ? this.explore.cameraState() : null),
     };
@@ -1031,6 +1047,7 @@ export class App {
       if (this.mode === 'explore') this.hud.update(this.world, this.explore.nearest, 'explore', this.ui.capturing);
       this.hud.nameplates(this.mode === 'explore' ? this.explore.nameplates().map((n) => ({ ...n, screen: this.explore!.project(n.pos, innerWidth, innerHeight) })) : []);
       this.tutorial?.update(this.world, this.explore);
+      if (this.mode === 'explore') this.maybeRepairCutscene();
     } else if (this.mode === 'visit') {
       if (input.hit('Escape') || input.hit('Enter')) this.endVisit();
     } else if ((this.mode === 'boarding' || this.mode === 'landing') && this.explore) {

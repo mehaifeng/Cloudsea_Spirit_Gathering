@@ -1,13 +1,13 @@
 import { getContent } from '@cloudsea/content';
 import { relocateBuildings } from './home';
-import { HOME_DOCK } from './layout';
+import { arrivalPoint, HOME_DOCK, homeTerrain, islandTerrain } from './layout';
 import type { CharacterState, PlayerRuntime, WorldState } from './state';
 
 /**
  * 存档（铁律 7、DESIGN 9.3 / 9.4）：世界存档与角色存档分开，都带 version。
  * 结构变更时：版本号 +1，在 MIGRATIONS 里加一条从旧版本升级的函数，并补测试。
  */
-export const WORLD_SAVE_VERSION = 6;
+export const WORLD_SAVE_VERSION = 7;
 export const CHARACTER_SAVE_VERSION = 4;
 
 export interface WorldSaveFile {
@@ -87,6 +87,25 @@ export const WORLD_MIGRATIONS: Readonly<Record<number, Migration>> = {
       k['pendingPlan'] ??= null;
       k['pendingTalk'] ??= {};
       k['summaryPending'] ??= false;
+    }
+    return { ...data, world: w };
+  },
+  /**
+   * v6 → v7（DESIGN v0.10）：池塘重做、挪离码头，水里不能站人。因为池塘挪了位置而落进水里的建筑挪到附近空位；
+   * 站在水里的玩家挪到码头边（家园岛）或登岛点（其他岛）。
+   */
+  6: (data) => {
+    const content = getContent();
+    const w = JSON.parse(JSON.stringify(data['world'])) as Omit<WorldState, 'characters' | 'battles'>;
+    for (const home of Object.values(w.homes)) relocateBuildings(content, home);
+    for (const [id, p] of Object.entries(w.players)) {
+      const home = p.islandId === `home:${id}` ? w.homes[id] : undefined;
+      const island = content.islands.get(p.islandId);
+      const terrain = home ? homeTerrain(home.seed, home.coreLevel) : island ? islandTerrain(island) : null;
+      if (!terrain || terrain.waterDistance(p.x, p.z) > 0.3) continue;
+      const to = home ? { x: HOME_DOCK.x, z: HOME_DOCK.z - 2.5 } : arrivalPoint(island!);
+      p.x = to.x;
+      p.z = to.z;
     }
     return { ...data, world: w };
   },

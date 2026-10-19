@@ -49,6 +49,10 @@ export interface SkiffView {
   setCore(level: number): void;
   /** 切换完好 / 破损（只有 damageable 或 wrecked 的云舟有破损版）。 */
   setDamaged(damaged: boolean): void;
+  /** 修补进度 0..1（v0.11 修船播片）：破洞上一块块钉上新木板，支棱的碎板随之拆掉。 */
+  setRepair(k: number): void;
+  /** 破洞的位置（船体局部坐标），修船的伙计按它找钉木板的地方。 */
+  readonly holes: readonly THREE.Vector3[];
 }
 
 const WOOD = { light: 0xa8774b, mid: 0x9a6a43, dark: 0x6b4a35, keel: 0x5a3e2c, trim: 0xe07a5f, deck: 0xc9a27a, brass: 0xc9a35a, teal: 0x3f8a86 };
@@ -315,22 +319,42 @@ export function makeSkiff(opts: { wrecked?: boolean; damageable?: boolean; seed?
     }
   }
 
-  // 破损：破洞边支棱出来的碎木板
+  // 破损：破洞边支棱出来的碎木板；修补用的新木板（颜色比旧船板浅，一开始藏着）
+  const shards: THREE.Object3D[][] = [];
+  const patches: THREE.Mesh[] = [];
   if (twoState) {
     const r2 = mulberry((opts.seed ?? 7) + 7);
     for (const hp of holes) {
+      const pair: THREE.Object3D[] = [];
       for (let k = 0; k < 2; k++) {
         const shard = box(hull, 0.05, 0.03, 0.35 + r2() * 0.25, r2() < 0.5 ? WOOD.mid : WOOD.keel, hp.x * (0.9 + r2() * 0.2), hp.y - 0.02, hp.z + (r2() - 0.5) * 0.3);
         shard.rotation.set((r2() - 0.5) * 1.2, (r2() - 0.5) * 0.8, (r2() - 0.5) * 1.4);
         broken.push(shard);
+        pair.push(shard);
       }
+      shards.push(pair);
+      // 贴着船壳、朝外：法线大致从船身中线指向破洞
+      const patch = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.36, 0.035), mat(0xdcb582));
+      patch.position.copy(hp);
+      patch.lookAt(hp.clone().add(new THREE.Vector3(hp.x, hp.y - 0.75, 0).normalize()));
+      patch.position.add(new THREE.Vector3(hp.x, hp.y - 0.75, 0).normalize().multiplyScalar(0.02));
+      patch.castShadow = true;
+      patch.visible = false;
+      hull.add(patch);
+      patches.push(patch);
     }
   }
+  let repair = 0;
   let damaged = false;
   const applyDamage = (d: boolean) => {
     damaged = d && twoState;
     for (const o of intact) o.visible = !damaged;
     for (const o of broken) o.visible = damaged;
+    const n = Math.round(repair * patches.length);
+    patches.forEach((p, i) => {
+      p.visible = damaged && i < n;
+      for (const sh of shards[i]!) sh.visible = damaged && i >= n;
+    });
     if (bentBlade) bentBlade.rotation.x = damaged ? 0.9 : 0;
   };
   applyDamage(wrecked);
@@ -349,8 +373,13 @@ export function makeSkiff(opts: { wrecked?: boolean; damageable?: boolean; seed?
     group,
     seats,
     glows,
+    holes,
     setDamaged(d) {
       applyDamage(d);
+    },
+    setRepair(k) {
+      repair = Math.max(0, Math.min(1, k));
+      applyDamage(damaged);
     },
     setCore(level) {
       coreLevel = level;

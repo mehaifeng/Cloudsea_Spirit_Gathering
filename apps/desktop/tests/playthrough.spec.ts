@@ -145,6 +145,13 @@ test('新手引导与核心循环', async () => {
   await win.screenshot({ path: 'screenshots/04-battle-tutorial.png' });
   await fight(win, [/轻击/]);
   expect(await g(win, 'g.world().characters.p1.tutorial.step')).toBe(3);
+  // 商队修船播片（v0.10）：播完残骸换成修好的云舟
+  await closeDialogues(win);
+  await skipCutscene(win, 'screenshots/04c-repair.png');
+  expect(await g(win, 'g.skiffWrecked()')).toBe(false);
+  // v0.11：跳过播片时，商队领队的话（为什么来、商队的规矩）照样弹出来
+  expect(await g(win, 'g.dialogueOpen()')).toBe(true);
+  await closeDialogues(win);
 
   // 3 出航、捕获
   await sail(win, 'wheatSlope', 'screenshots/05a-arrival.png', ['screenshots/04a-voyage-depart.png', 'screenshots/04b-voyage-cruise.png'], 'screenshots/04-boarding.png');
@@ -204,6 +211,9 @@ test('新手引导与核心循环', async () => {
   await g(win, 'g.fastForward(1500)');
   await win.waitForTimeout(800);
   expect(await g(win, `g.world().homes.p1.buildings['${nestId}'].built`)).toBe(true);
+  // v0.10（Lynx 反馈：建好第一个栖巢后引导不再更新）：帮忙建栖巢就算打过工，建好后直接进入下一步
+  for (let i = 0; i < 20 && (await g<number>(win, 'g.world().characters.p1.tutorial.step')) < 5; i++) await win.waitForTimeout(100);
+  expect(await g(win, 'g.world().characters.p1.tutorial.step')).toBe(5);
   // 栖巢建好后工人回到空闲；给它找份工作：田地
   const field = await g<{ ok: boolean }>(
     win,
@@ -213,7 +223,6 @@ test('新手引导与核心循环', async () => {
   const fieldId = await g<string>(win, `Object.values(g.world().homes.p1.buildings).find((b) => b.type === 'field').id`);
   expect((await g<{ ok: boolean; error?: string }>(win, `g.act({ type: 'assignWorker', buildingId: '${fieldId}', spiritId: '${worker}' })`)).ok).toBe(true);
   await win.waitForTimeout(400);
-  expect(await g(win, 'g.world().characters.p1.tutorial.step')).toBe(5);
 
   // 5 点亮第一盏灯
   await g(win, 'g.teleport(0, 2.4, Math.PI)');

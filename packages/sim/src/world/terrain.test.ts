@@ -1,6 +1,6 @@
 import { getContent, HOME_CHART_POS } from '@cloudsea/content';
 import { describe, expect, it } from 'vitest';
-import { gatherNodes, homeTerrain, islandTerrain, randomSpot, worldPosition } from './layout';
+import { arrivalPoint, gatherNodes, HOME_DOCK, homeTerrain, islandTerrain, randomSpot, WATER_CLEARANCE, worldPosition } from './layout';
 import { createTerrain, WATER_LEVEL } from './terrain';
 
 const content = getContent();
@@ -14,12 +14,31 @@ describe('地形与水面（v0.5）', () => {
     expect(t.waterDistance(5, 9)).toBeCloseTo(1, 0);
   });
 
-  it('家园岛池塘中间够深，能游泳（v0.6：水深超过 1 米切换游泳）', () => {
-    for (const seed of [1, 42, 20261017]) {
-      const t = homeTerrain(seed, 1);
-      let deepest = 0;
-      for (let x = -30; x <= 30; x += 0.5) for (let z = -30; z <= 30; z += 0.5) if (t.isWater(x, z)) deepest = Math.max(deepest, WATER_LEVEL - t.height(x, z));
-      expect(deepest, `seed ${seed}`).toBeGreaterThan(1.2);
+  it('岸线就是水面的边（v0.10）：岸外没有低于水面的坑，水里的地面都在水面下', () => {
+    const terrains = [homeTerrain(1, 1), homeTerrain(42, 3), ...[...content.islands.values()].map((i) => islandTerrain(i))];
+    for (const t of terrains) {
+      const R = t.params.radius;
+      for (let x = -R; x <= R; x += 0.37) {
+        for (let z = -R; z <= R; z += 0.37) {
+          if (!t.inside(x, z, 1)) continue;
+          const d = t.waterDistance(x, z);
+          if (d > 0 && d < 1) expect(t.height(x, z), `${t.params.seed} (${x}, ${z})`).toBeGreaterThanOrEqual(WATER_LEVEL);
+          if (d === 0 && t.isWater(x, z)) expect(t.height(x, z)).toBeLessThan(WATER_LEVEL);
+        }
+      }
+    }
+  });
+
+  it('水边离码头 / 登岛点、迫降点、云气团都至少 10 米（v0.10）', () => {
+    // 迫降点与云气团的位置见 apps/desktop 的 ExploreView.WRECK / ORB
+    const homeSpots = [HOME_DOCK, { x: 3.5, z: 11 }, { x: 2.5, z: 4.5 }];
+    for (let seed = 1; seed <= 60; seed++) {
+      const t = homeTerrain(seed * 7919, 1);
+      for (const p of homeSpots) expect(t.waterDistance(p.x, p.z), `seed ${seed}`).toBeGreaterThanOrEqual(WATER_CLEARANCE);
+    }
+    for (const isl of content.islands.values()) {
+      const a = arrivalPoint(isl);
+      expect(islandTerrain(isl).waterDistance(a.x, a.z), isl.id).toBeGreaterThanOrEqual(WATER_CLEARANCE);
     }
   });
 

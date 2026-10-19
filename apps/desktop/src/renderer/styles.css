@@ -202,6 +202,8 @@ body:has(#dialogue:not(.hidden)) #hints { display: none; }
 .cine-title.on { opacity: 1; transform: none; }
 .cine-title .main { font-family: var(--f-title); font-size: 64px; letter-spacing: 0.2em; line-height: 1.1; }
 .cine-title .sub { font-size: 18px; letter-spacing: 0.08em; margin-top: 8px; max-width: 30em; }
+.cine-fade { position: absolute; inset: 0; background: var(--paper); opacity: 0; }
+.cine-title.ink { left: 0; right: 0; top: 40vh; text-align: center; color: var(--ink); text-shadow: none; }
 .cine-skip { position: absolute; right: 18px; bottom: calc(11vh + 10px); color: rgba(255, 248, 239, 0.75); font-size: 14px; opacity: 0; transition: opacity 0.4s; }
 .cine.on .cine-skip { opacity: 1; }
 

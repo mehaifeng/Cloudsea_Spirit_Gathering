@@ -106,32 +106,32 @@ export const SCENARIOS: Record<string, { readonly desc: string; run(h: ScenarioH
       await wait(300);
     },
   },
-  swim: {
-    desc: '家园岛池塘最深处游泳',
-    run: async (h) => {
-      await home(h);
-      const p = deepestWater(h.world());
-      h.teleport(p.x, p.z, 0);
-      h.setCamera(0.8, 0.35, 7);
-      h.advance(1);
-    },
-  },
   shore: {
-    desc: '站在池塘边，正对着深水（走进去会切换游泳）',
+    desc: '站在池塘边，正对着水（v0.10：不能下水，按 W 会停在岸边）',
     run: async (h) => {
       await home(h);
       const p = deepestWater(h.world());
       const homeState = Object.values(h.world().homes)[0]!;
       const t = homeTerrain(homeState.seed, homeState.coreLevel);
-      // 从最深点往外走到岸上
+      // 从最深点往东走到岸上
       for (let r = 0; r < 12; r += 0.25) {
-        if (!t.isWater(p.x + r, p.z)) {
+        if (t.waterDistance(p.x + r, p.z) > 1) {
           h.teleport(p.x + r + 0.8, p.z, -Math.PI / 2);
           break;
         }
       }
       // 镜头在玩家东边、朝西看：按 W 就是往水里走
       h.setCamera(Math.PI / 2, 0.3, 7);
+      h.advance(0.5);
+    },
+  },
+  pondSide: {
+    desc: '贴着地面从侧面看池塘（v0.10：岸边不露出水面下的坑）',
+    run: async (h) => {
+      await home(h);
+      const p = deepestWater(h.world());
+      h.teleport(p.x + 7, p.z + 1.5, -Math.PI / 2);
+      h.setCamera(Math.PI / 2 - 0.25, 0.1, 5);
       h.advance(0.5);
     },
   },
@@ -258,6 +258,25 @@ export const SCENARIOS: Record<string, { readonly desc: string; run(h: ScenarioH
       h.closeDialogues();
       await wait(200);
       h.closeDialogues();
+    },
+  },
+  repair: {
+    desc: '首战刚打完（引导第 3 步），商队修船播片从头播（v0.10）',
+    run: async (h) => {
+      // 等同读一份“首战刚结束”的存档：看过开场与袭击、有第一只伙伴、站在云气团旁边
+      await h.newGame((w) => {
+        const content = getContent();
+        const c = w.characters['p1']!;
+        const s = makeSpirit(content, 'warmbud', 5, { id: 'p1-starter', owner: 'p1' });
+        c.spirits[s.id] = { ...s, state: 'party' };
+        c.party.push(s.id);
+        c.tutorial = { step: 3, done: false };
+        c.seenCutscenes.push('opening', 'ambush');
+        const p = w.players['p1']!;
+        p.x = 2.5;
+        p.z = 6.5;
+      });
+      await until(() => h.mode() === 'cutscene', 4000);
     },
   },
   wild: {

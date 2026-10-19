@@ -33,6 +33,8 @@ export interface TerrainParams {
 
 /** 水面高度：池塘与溪流里低于它的地方是水。 */
 export const WATER_LEVEL = -0.15;
+/** 岸比水面高出多少（米）。 */
+export const SHORE_BANK = 0.2;
 
 export interface Terrain {
   readonly params: TerrainParams;
@@ -44,7 +46,7 @@ export interface Terrain {
   inside(x: number, z: number, margin?: number): boolean;
   /** 这里是不是水（池塘或溪流里、地面低于水面）。 */
   isWater(x: number, z: number): boolean;
-  /** 到最近水面的水平距离（米）；没有水返回 Infinity。用于岸边上色。 */
+  /** 到最近岸线的水平距离（米，水里为 0）；没有水返回 Infinity。用于岸边上色、不能下水的碰撞。 */
   waterDistance(x: number, z: number): number;
 }
 
@@ -90,12 +92,15 @@ export function createTerrain(params: TerrainParams): Terrain {
       const k = smoothstep(f.radius * 0.55, f.radius, d);
       h = f.height + (h - f.height) * k;
     }
-    // 水体：岸边 1.3 倍半径内逐渐下凹到水底
+    // 水体（v0.10）：岸线就在 k = 1（池塘半径 / 溪流半宽）。水下从岸线陡降到平底；
+    // 岸上先抬成略高于水面的岸，再过渡回原地形。岸外不会有低于水面的坑。
     const w = waterShape(x, z);
-    if (w.k < 1.6) {
-      const bed = WATER_LEVEL - w.depth;
-      const k = smoothstep(0.55, 1.6, w.k);
-      h = bed + (Math.max(h, WATER_LEVEL + 0.25) - bed) * k;
+    if (w.k < 1) {
+      const f = Math.min(1, (1 - w.k) / 0.55);
+      h = WATER_LEVEL - w.depth * (1 - (1 - f) * (1 - f));
+    } else if (w.k < 1.8) {
+      const bank = WATER_LEVEL + SHORE_BANK * Math.min(1, (w.k - 1) / 0.15);
+      h = bank + (Math.max(h, WATER_LEVEL + SHORE_BANK) - bank) * smoothstep(1.15, 1.8, w.k);
     }
     const e = 1 - smoothstep(0.8, 1.02, t);
     return h * e - (1 - e) * 0.8;
@@ -106,7 +111,7 @@ export function createTerrain(params: TerrainParams): Terrain {
     rim,
     height,
     inside: (x, z, margin = 0) => Math.hypot(x, z) < rim(Math.atan2(z, x)) * 0.8 - margin,
-    isWater: (x, z) => (ponds.length > 0 || streams.length > 0) && waterShape(x, z).k < 1.05 && height(x, z) < WATER_LEVEL,
+    isWater: (x, z) => (ponds.length > 0 || streams.length > 0) && waterShape(x, z).k < 1 && height(x, z) < WATER_LEVEL,
     waterDistance: (x, z) => (ponds.length > 0 || streams.length > 0 ? Math.max(0, waterShape(x, z).edge) : Infinity),
   };
 }

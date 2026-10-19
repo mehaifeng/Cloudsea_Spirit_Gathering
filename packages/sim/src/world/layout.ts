@@ -11,15 +11,17 @@ export function homeRadius(coreLevel: number): number {
 export const HOME_DOCK = { x: 0, z: 16 } as const;
 
 export function homeTerrain(seed: number, coreLevel: number): Terrain {
-  // 家园岛（v0.5）：中心留出平地建造；一侧有池塘，另一侧有小山。位置由岛的种子决定、不随岛核等级变
+  // 家园岛（v0.5）：中心留出平地建造；一侧有池塘，另一侧有小山。位置由岛的种子决定、不随岛核等级变。
+  // v0.10：池塘只在岛的后半边（码头在 +z 一侧），离码头、迫降点、云气团都至少 10 米；小山错开 1.9 弧度
   const rng = createRng(deriveSeed(seed, 'home-features'));
-  const a = rng.next() * Math.PI * 2;
+  const a = Math.PI * (1.12 + rng.next() * 0.76);
   const pondR = 12 + rng.next() * 2;
+  const b = a < Math.PI * 1.5 ? a + 1.9 : a - 1.9;
   return createTerrain({
     seed,
     radius: homeRadius(coreLevel),
     amplitude: 0.6,
-    hills: [{ x: Math.cos(a + Math.PI) * 14, z: Math.sin(a + Math.PI) * 14, spread: 40, height: 2.2 }],
+    hills: [{ x: Math.cos(b) * 14, z: Math.sin(b) * 14, spread: 40, height: 2.2 }],
     flats: [
       { x: 0, z: 0, radius: 9, height: 0.2 },
       { x: HOME_DOCK.x, z: HOME_DOCK.z, radius: 4.5, height: 0.15 },
@@ -28,26 +30,34 @@ export function homeTerrain(seed: number, coreLevel: number): Terrain {
   });
 }
 
+/** 水边离码头 / 登岛点至少多远（米，v0.10）。 */
+export const WATER_CLEARANCE = 10;
+
 /** 按主题生成地形要素（DESIGN 3.4，v0.5）：由岛的种子决定，所有端一致。 */
 function themeFeatures(island: Island): Pick<TerrainParams, 'hills' | 'ponds' | 'streams'> {
   const R = island.radius;
   const rng = createRng(deriveSeed(island.seed, 'theme'));
   const at = (r: number, a: number) => ({ x: Math.cos(a) * r, z: Math.sin(a) * r });
+  const arrival = arrivalPoint(island);
   switch (island.theme) {
     case 'meadow': {
       const a = rng.next() * Math.PI * 2;
+      // 池塘离登岛点太近就挪到对面（v0.10）
+      const near = at(R * 0.38, a + 4.1);
+      const pond = Math.hypot(near.x - arrival.x, near.z - arrival.z) >= 3.2 + WATER_CLEARANCE ? near : at(R * 0.38, a + 4.1 + Math.PI);
       return {
         hills: [
           { ...at(R * 0.35, a), spread: R * 6, height: 2.4 },
           { ...at(R * 0.4, a + 2.2), spread: R * 4, height: 1.6 },
         ],
-        ponds: [{ ...at(R * 0.38, a + 4.1), radius: 3.2, depth: 1.6 }],
+        ponds: [{ ...pond, radius: 3.2, depth: 1.6 }],
       };
     }
     case 'brook': {
-      // 一条溪流斜穿全岛，两侧有岩壁（陡的小山）
-      const a = rng.next() * Math.PI;
-      const pts = [-0.85, -0.45, 0, 0.45, 0.85].map((t, i) => {
+      // 一条溪流斜穿全岛，两侧有岩壁（陡的小山）。v0.10：溪流接近东西走向（±0.25 弧度），
+      // 从登岛点（南侧）旁边绕开；两端停在岛缘内，不悬在岛缘的斜坡上
+      const a = (rng.next() - 0.5) * 0.5;
+      const pts = [-0.7, -0.37, 0, 0.37, 0.7].map((t, i) => {
         const p = at(R * t, a);
         const wiggle = (i % 2 ? 1 : -1) * R * 0.08;
         return { x: p.x - Math.sin(a) * wiggle, z: p.z + Math.cos(a) * wiggle };
@@ -55,7 +65,8 @@ function themeFeatures(island: Island): Pick<TerrainParams, 'hills' | 'ponds' | 
       return {
         streams: [{ points: pts, width: 2.6, depth: 0.6 }],
         hills: [
-          { ...at(R * 0.4, a + Math.PI / 2), spread: R * 1.6, height: 3.6 },
+          // 南侧（登岛点那一侧）的岩壁往西错开，不挡在栈桥旁边
+          { ...at(R * 0.4, a + Math.PI / 2 + 0.9), spread: R * 1.6, height: 3.6 },
           { ...at(R * 0.45, a - Math.PI / 2 + 0.4), spread: R * 1.2, height: 3 },
         ],
       };

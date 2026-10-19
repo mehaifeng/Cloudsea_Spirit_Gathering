@@ -23,6 +23,10 @@ export interface Shot {
   readonly onUpdate?: (k: number, dt: number) => void;
   /** 镜头震动强度（坠落、撞击）。 */
   readonly shake?: number;
+  /** 纸色转场（v0.10）：本镜头进度 k → 遮罩不透明度 0..1；有它时标题卡用墨色写在纸上（例如“半日后”）。 */
+  readonly fade?: (k: number) => number;
+  /** 停在本镜头的终点机位，直到它返回 false（v0.11：播片中途的对话，等玩家翻完）。 */
+  readonly hold?: () => boolean;
 }
 
 const easeFns = {
@@ -41,7 +45,10 @@ export class Cutscene {
   private readonly bottom = h('div', { class: 'letterbox bottom' });
   private readonly subtitle = h('div', { class: 'cine-sub' });
   private readonly titleCard = h('div', { class: 'cine-title' });
+  private readonly fadeEl = h('div', { class: 'cine-fade' });
   private readonly onKey = (e: KeyboardEvent) => {
+    // 对话框先收到按键（翻页）时不跳过播片
+    if (e.defaultPrevented) return;
     if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       e.stopPropagation();
@@ -54,7 +61,7 @@ export class Cutscene {
     layer: HTMLElement,
     private readonly onDone: () => void,
   ) {
-    this.overlay = h('div', { class: 'cine' }, this.top, this.bottom, this.titleCard, this.subtitle, h('div', { class: 'cine-skip' }, 'Esc 跳过'));
+    this.overlay = h('div', { class: 'cine' }, this.fadeEl, this.top, this.bottom, this.titleCard, this.subtitle, h('div', { class: 'cine-skip' }, 'Esc 跳过'));
     layer.append(this.overlay);
     requestAnimationFrame(() => this.overlay.classList.add('on'));
     window.addEventListener('keydown', this.onKey, true);
@@ -106,8 +113,10 @@ export class Cutscene {
       clear(this.titleCard);
       if (shot.title) this.titleCard.append(h('div', { class: 'main' }, shot.title.main), shot.title.sub ? h('div', { class: 'sub' }, shot.title.sub) : '');
       this.titleCard.classList.toggle('on', !!shot.title);
+      this.titleCard.classList.toggle('ink', !!shot.fade);
     }
-    this.time += dt;
+    const holding = this.time >= shot.duration && !!shot.hold?.();
+    this.time = holding ? shot.duration : this.time + dt;
     const k = Math.min(1, this.time / shot.duration);
     const e = easeFns[shot.ease ?? 'inOut'](k);
     const a = shot.from();
@@ -119,8 +128,9 @@ export class Cutscene {
       camera.position.add(new THREE.Vector3((Math.random() - 0.5) * s, (Math.random() - 0.5) * s, (Math.random() - 0.5) * s));
     }
     camera.lookAt(look);
+    this.fadeEl.style.opacity = String(shot.fade ? shot.fade(k) : 0);
     shot.onUpdate?.(k, dt);
-    if (k >= 1) {
+    if (k >= 1 && !shot.hold?.()) {
       this.index++;
       this.started = false;
     }

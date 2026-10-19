@@ -80,7 +80,7 @@ prototype/      M0 单文件原型，只作参考，不再修改
   - 状态异常 = `ailment`（目眩 `dazzled` / 湿透 `soaked` / 失衡 `unbalanced` / 麻痹 `paralyzed` / 迷蒙 `hazed`），增减益层数 = `stage`，暴击 = `crit`，倒下 = `downed`
   - 提灯 = `lantern`（≠ 灯塔 `lighthouse`），云舟 = `skiff`（v0.5 起取代风帆 `sail`），航行 = `voyage`，采集工具 = `gatherTool`，燃料 = `fuel`，雾浓度 = `fogLevel`
   - 播片 / 过场 = `cutscene`，镜头时间轴 = `cameraTrack`，细节层级 = `lod`，世界布局 = `worldLayout`
-  - 上船 / 下船 = `board` / `disembark`，平台（码头、栈桥、甲板）= `platform`，游泳 = `swim`，涉水 = `wade`，迫降 = `crashLanding`，战斗转场 = `battleTransition`，测试场景 = `scenario`，舷梯 = `gangway`，参战者 = `participants`，加入战斗 = `joinBattle`，云主战 = `cloudlord battle`，灯塔重燃 = `lighthousesLit`，差量 = `delta / patch`，连接 = `conn`，房主 / 客人 = `host` / `guest`，混沌迷雾（袭击时）= `mist spawn`，水下染色 = `waterTint`，核心塔治疗 = `coreHeal`
+  - 上船 / 下船 = `board` / `disembark`，平台（码头、栈桥、甲板）= `platform`，编排跳跃（播片里跳下云舟）= `leap`，商队修船（播片）= `repair`，迫降 = `crashLanding`，战斗转场 = `battleTransition`，测试场景 = `scenario`，舷梯 = `gangway`，参战者 = `participants`，加入战斗 = `joinBattle`，云主战 = `cloudlord battle`，灯塔重燃 = `lighthousesLit`，差量 = `delta / patch`，连接 = `conn`，房主 / 客人 = `host` / `guest`，混沌迷雾（袭击时）= `mist spawn`，水下染色 = `waterTint`，核心塔治疗 = `coreHeal`
   - 岛核 = `islandCore`，家园岛 = `homeIsland`，漂流岛 = `driftIsle`，守岛人岛 = `keeperIsland`，集市岛 = `marketIsle`，星图 = `starChart`
   - 栖巢 = `nest`，繁殖屋 = `hatchery`，工位 = `workSlot`，蓝图 = `blueprint`，订单 = `order`，商队 = `caravan`
   - 灯露 = `lanternDew`，记忆碎片 = `memoryShard`，图鉴 = `codex`，好感度 = `affinity`，外来（导入）标记 = `foreign`

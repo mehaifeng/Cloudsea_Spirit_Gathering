@@ -20,11 +20,16 @@ const HINTS: Record<number, string> = {
   5: '走到岛中央的<b>岛核</b>前按 <b>E</b>，点亮岛上的第一盏灯。',
 };
 
+/** 第 4 步栖巢已经建好、但还没让絮灵干过活时的提示（例如读档回来）。 */
+const HINT_NEST_BUILT = '栖巢建好了！再建一块<b>田地</b>（<b>B</b>），对着它按 <b>E</b>，安排一只不在队伍里的絮灵去<b>打工</b>。';
+
 export class Tutorial {
   private moved = 0;
   private last: { x: number; z: number } | null = null;
   private shownStep = -1;
   private introDone = false;
+  /** 第 4 步：看到过絮灵在打工（包括帮忙建栖巢——栖巢建好后建筑工会下工）。 */
+  private sawWorker = false;
 
   constructor(
     private readonly ui: UiRoot,
@@ -35,10 +40,15 @@ export class Tutorial {
   update(world: Readonly<WorldState>, view: ExploreView | null): void {
     const c = world.characters[PLAYER_ID]!;
     const step = c.tutorial.done ? 99 : c.tutorial.step;
-    if (step !== this.shownStep) {
-      this.shownStep = step;
+    const home = world.homes[PLAYER_ID]!;
+    const nestBuilt = Object.values(home.buildings).some((b) => b.type === 'nest' && b.built);
+    if (step >= 3 && Object.values(c.spirits).some((s) => s.state === 'working')) this.sawWorker = true;
+    // 提示随进度变：第 4 步栖巢建好了还没人干过活，换成“去田地打工”的提示（v0.10）
+    const shown = step === 4 && nestBuilt && !this.sawWorker ? 4.5 : step;
+    if (shown !== this.shownStep) {
+      this.shownStep = shown;
       clear(this.ui.tutorial);
-      const hint = HINTS[step];
+      const hint = shown === 4.5 ? HINT_NEST_BUILT : HINTS[step];
       this.ui.tutorial.classList.toggle('hidden', !hint);
       if (hint) this.ui.tutorial.append(h('div', { class: 'panel', html: `<div class="muted">引导</div>${hint}` }));
     }
@@ -62,12 +72,8 @@ export class Tutorial {
 
     // 按捕获次数判断：第一只捕获的絮灵很可能和伙伴同物种，图鉴不会增加
     if (step === 3 && c.stats.caught >= 1) this.advance(4);
-    if (step === 4) {
-      const home = world.homes[PLAYER_ID]!;
-      const nest = Object.values(home.buildings).some((b) => b.type === 'nest' && b.built);
-      const working = Object.values(c.spirits).some((s) => s.state === 'working');
-      if (nest && working) this.advance(5);
-    }
+    // 栖巢建好 + 有絮灵干过活（v0.10，Lynx 反馈：絮灵帮忙建好栖巢后自动下工，引导就卡住了）
+    if (step === 4 && nestBuilt && this.sawWorker) this.advance(5);
   }
 
   /** 场景切换（保留接口）。 */

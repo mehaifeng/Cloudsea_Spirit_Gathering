@@ -1,10 +1,14 @@
-import { _electron as electron, expect, test, type Page } from '@playwright/test';
-import { resolve } from 'node:path';
+import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { createServer, type Server } from 'node:http';
+import { extname, join, normalize, resolve } from 'node:path';
 
 /**
  * 场景截图（v0.6 测试模式）：每个场景直接启动到某个画面并截图，改动后几秒钟就能自查，
  * 不必跑完整的新手引导回归。截图在 screenshots/scenes/（不入库）。
- * 只跑部分场景：SCENES=swim,dock pnpm scenes
+ * v0.11：不再启动 Electron 窗口，而是用无头 Chromium 打开打包好的渲染端（dist/renderer），
+ * 不弹窗、不抢焦点；渲染端没有 Electron 桥接时存档走浏览器本地存储（saves.ts 的 localBackend）。
+ * 跑哪些场景由 scripts/scenes.mjs 按改动的文件挑选（SCENES=shore,dock 指定，SCENES=all 全量）。
  */
 const only = (process.env['SCENES'] ?? '').split(',').filter(Boolean);
 
@@ -12,17 +16,51 @@ async function g<T = unknown>(win: Page, expr: string): Promise<T> {
   return win.evaluate(`(async () => { const g = window.__game; return ${expr}; })()`) as Promise<T>;
 }
 
+/** 本机静态服务：ES 模块不能从 file:// 加载，所以起一个只监听 127.0.0.1 的小服务。每个 worker 一个。 */
+const ROOT = resolve(__dirname, '..', 'dist', 'renderer');
+const TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.woff': 'font/woff', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json' };
+let server: Promise<{ url: string; srv: Server }> | null = null;
+function serve(): Promise<{ url: string; srv: Server }> {
+  server ??= new Promise((ok) => {
+    const srv = createServer((req, res) => {
+      const path = normalize(decodeURIComponent((req.url ?? '/').split('?')[0]!)).replace(/^([/\\])+/, '');
+      const file = join(ROOT, path || 'index.html');
+      if (!file.startsWith(ROOT)) return void res.writeHead(403).end();
+      readFile(file).then(
+        (body) => res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' }).end(body),
+        () => res.writeHead(404).end(),
+      );
+    });
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address();
+      ok({ url: `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}/index.html`, srv });
+    });
+  });
+  return server;
+}
+
+let browser: Browser | null = null;
+test.afterAll(async () => {
+  await browser?.close();
+  browser = null;
+  (await server)?.srv.close();
+  server = null;
+});
+
 async function launch(scene: string): Promise<{ win: Page; close: () => Promise<void>; errors: string[] }> {
-  const app = await electron.launch({ args: ['.'], cwd: resolve(__dirname, '..'), env: { ...process.env, CLOUDSEA_TEST: '1', CLOUDSEA_SCENE: scene } });
-  const win = await app.firstWindow();
+  const { url } = await serve();
+  // 无头模式没有显卡时 WebGL 用软件渲染（SwiftShader）
+  browser ??= await chromium.launch({ args: ['--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const win = await ctx.newPage();
   const errors: string[] = [];
   win.on('pageerror', (e) => errors.push(`pageerror: ${e.message}\n${e.stack}`));
   win.on('console', (m) => {
     if (m.type() === 'error') errors.push(`console: ${m.text()}`);
   });
-  await win.setViewportSize({ width: 1280, height: 720 });
+  await win.goto(`${url}?test=1&scene=${encodeURIComponent(scene)}`);
   await win.waitForSelector(`body[data-scene="${scene}"]`, { timeout: 60_000 });
-  return { win, errors, close: () => app.close() };
+  return { win, errors, close: () => ctx.close() };
 }
 
 const shot = (win: Page, name: string) => win.screenshot({ path: `screenshots/scenes/${name}.png` });
@@ -31,12 +69,49 @@ const shot = (win: Page, name: string) => win.screenshot({ path: `screenshots/sc
 const SCENES: Record<string, (win: Page) => Promise<void>> = {
   opening: async (win) => {
     await g(win, 'g.freeze(true)');
-    for (const [t, name] of [[2.5, 'a-glide'], [5.6, 'b-approach'], [7.4, 'c-slide'], [10.4, 'd-stopped'], [12.6, 'e-jump'], [16.2, 'f-orb']] as const) {
+    const to = async (t: number) => {
       const now = (await g<number | null>(win, 'g.cutsceneTime()')) ?? 0;
       await g(win, `g.advance(${Math.max(0, t - now)})`);
+    };
+    for (const [t, name] of [[2.5, 'a-glide'], [5.6, 'b-approach'], [7.4, 'c-slide'], [10.4, 'd-stopped']] as const) {
+      await to(t);
       await win.waitForTimeout(150);
       await shot(win, `opening-${name}`);
     }
+    // 跳下云舟（v0.10，Lynx 反馈：被船舷挡住、一直顶着走，然后瞬移到地上）：
+    // 逐帧推进，人每一步都只挪一小段（没有瞬移），中途确实离地，最后站在甲板外的草地上
+    let prev: { x: number; z: number; y: number } | null = null;
+    let maxStep = 0;
+    let flew = false;
+    let shotTaken = false;
+    // v0.11（Lynx 反馈：跳下来像滑下来的）：大跳有专门的蓄力 / 腾空 / 落地姿势，顶点比甲板高 1 米多
+    let peak = -Infinity;
+    let start: number | null = null;
+    for (let t = 11.45; t < 14.8; t += 0.05) {
+      await to(t);
+      const p = (await g<{ x: number; z: number; y: number; airborne: boolean }>(win, 'g.player()'))!;
+      if (start === null && p.airborne) start = p.y;
+      if (p.airborne) peak = Math.max(peak, p.y);
+      if (prev) maxStep = Math.max(maxStep, Math.hypot(p.x - prev.x, p.z - prev.z));
+      if (prev && p.airborne && Math.hypot(p.x - prev.x, p.z - prev.z) > 0.05) {
+        flew = true;
+        // 刚过顶点时截一张
+        if (!shotTaken && p.y < prev.y) {
+          shotTaken = true;
+          await win.waitForTimeout(150);
+          await shot(win, 'opening-e-jump');
+        }
+      }
+      prev = p;
+    }
+    expect(flew).toBe(true);
+    expect(maxStep).toBeLessThan(0.4);
+    expect(peak - (start ?? peak)).toBeGreaterThan(0.8);
+    const landed = (await g<{ airborne: boolean; scripted: boolean }>(win, 'g.player()'))!;
+    expect(landed.airborne).toBe(false);
+    await to(16.6);
+    await win.waitForTimeout(150);
+    await shot(win, 'opening-f-orb');
     await g(win, 'g.advance(4)');
     await g(win, 'g.freeze(false)');
     await win.waitForTimeout(300);
@@ -44,6 +119,44 @@ const SCENES: Record<string, (win: Page) => Promise<void>> = {
     expect(await g(win, 'g.mode()')).toBe('explore');
     const p = await g<{ y: number; airborne: boolean }>(win, 'g.player()');
     expect(p.airborne).toBe(false);
+  },
+  repair: async (win) => {
+    // 商队修船（v0.10，Lynx 反馈：首战后云舟瞬间修好、没有画面也没有过渡；
+    // v0.11 反馈：商队为什么来没交代、商队的船是空船、修船用镐——加了对话、大船和船员、木板 / 锤子 / 锯 / 新晶体）
+    await g(win, 'g.freeze(true)');
+    expect(await g(win, 'g.mode()')).toBe('cutscene');
+    expect(await g(win, 'g.skiffWrecked()')).toBe(true);
+    const to = async (t: number) => {
+      const now = (await g<number | null>(win, 'g.cutsceneTime()')) ?? 0;
+      await g(win, `g.advance(${Math.max(0, t - now)})`);
+    };
+    for (const [t, name] of [[3.4, 'a-arrive'], [7.8, 'b-gangway']] as const) {
+      await to(t);
+      await win.waitForTimeout(150);
+      await shot(win, `repair-${name}`);
+    }
+    // 领队开口：播片停在两人的镜头上，等对话翻完才往下走
+    await to(9.8);
+    expect(await g(win, 'g.dialogueOpen()')).toBe(true);
+    await g(win, 'g.advance(2)');
+    expect(await g<number>(win, 'g.cutsceneTime()')).toBeLessThan(9.7);
+    await win.waitForTimeout(150);
+    await shot(win, 'repair-c-talk');
+    await g(win, 'g.closeDialogues()');
+    for (const [t, name] of [[12.8, 'd-carry'], [17.2, 'e-hammer'], [20.1, 'f-crystal'], [23.3, 'g-later'], [26.6, 'h-docked']] as const) {
+      await to(t);
+      await win.waitForTimeout(150);
+      await shot(win, `repair-${name}`);
+      // 转场盖满纸色之前一直是残骸，之后是修好的云舟
+      expect(await g(win, 'g.skiffWrecked()')).toBe(t < 22.8);
+    }
+    await g(win, 'g.advance(4)');
+    await g(win, 'g.freeze(false)');
+    await win.waitForTimeout(300);
+    expect(await g(win, 'g.mode()')).toBe('explore');
+    expect(await g(win, 'g.skiffWrecked()')).toBe(false);
+    expect(await g(win, `g.world().characters.p1.seenCutscenes.includes('repair')`)).toBe(true);
+    await shot(win, 'repair-e-back');
   },
   home: async (win) => {
     await win.waitForTimeout(500);
@@ -57,20 +170,20 @@ const SCENES: Record<string, (win: Page) => Promise<void>> = {
     await win.waitForTimeout(800);
     await shot(win, 'night');
   },
-  swim: async (win) => {
-    await win.waitForTimeout(600);
-    const p = await g<{ swimming: boolean }>(win, 'g.player()');
-    expect(p.swimming).toBe(true);
-    await shot(win, 'swim');
-  },
   shore: async (win) => {
     await win.waitForTimeout(300);
     await shot(win, 'shore-a-dry');
+    // v0.10：不能下水。朝水里走 2.5 秒，人停在岸上
     await win.keyboard.down('KeyW');
-    for (let i = 0; i < 40 && !(await g<{ swimming: boolean }>(win, 'g.player()')).swimming; i++) await win.waitForTimeout(100);
+    await win.waitForTimeout(2500);
     await win.keyboard.up('KeyW');
-    expect((await g<{ swimming: boolean }>(win, 'g.player()')).swimming).toBe(true);
-    await shot(win, 'shore-b-swim');
+    const p = await g<{ shore: number }>(win, 'g.player()');
+    expect(p.shore).toBeGreaterThan(0.2);
+    await shot(win, 'shore-b-blocked');
+  },
+  pondSide: async (win) => {
+    await win.waitForTimeout(400);
+    await shot(win, 'pond-side');
   },
   core: async (win) => {
     await win.waitForTimeout(500);
@@ -294,7 +407,8 @@ const SCENES: Record<string, (win: Page) => Promise<void>> = {
 for (const [name, run] of Object.entries(SCENES)) {
   if (only.length && !only.includes(name)) continue;
   test(`场景：${name}`, async () => {
-    test.setTimeout(120_000);
+    // 无头 Chromium 用软件渲染，帧率比窗口低；连着出航几座岛的场景（regions）要更久
+    test.setTimeout(name === 'regions' ? 300_000 : 120_000);
     const { win, close, errors } = await launch(name);
     try {
       await run(win);

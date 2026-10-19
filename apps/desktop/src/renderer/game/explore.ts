@@ -49,6 +49,14 @@ import {
   skiffHalfWidth,
   type GangwayView,
   type SkiffView,
+  makeCaravanShip,
+  type CaravanShipView,
+  caravanFloorAt,
+  caravanHalfWidth,
+  CARAVAN_DECK_Y,
+  CARAVAN_GATE,
+  type CarryKind,
+  type HumanoidLook,
   mat,
   nightFactor,
   type BuildingView,
@@ -108,14 +116,19 @@ const STEP = 0.55;
 const HOME_REGION = 'sunPlains' as const;
 
 /** 自动驾驶（上下船、开场跳下云舟）：走到目标点；可在途中起跳。 */
+/** 修船播片里上了岸的商队成员：沿路点走（到达时可回调）、到了以后转向 face、做 work 动作。 */
+interface CrewWalker {
+  view: HumanoidView;
+  path: Array<{ x: number; z: number; then?: (() => void) | undefined }>;
+  face: (() => number) | null;
+  work: 'hammer' | 'saw' | null;
+  at: THREE.Vector3 | null;
+}
+
 interface Autopilot {
   x: number;
   z: number;
   run: boolean;
-  /** 剩余距离小于它时起跳（一次）。 */
-  jumpAt?: number | undefined;
-  jumpStrength?: number | undefined;
-  jumped?: boolean;
   /** 到达后的朝向。 */
   faceYaw?: number | undefined;
   resolve: () => void;
@@ -162,6 +175,27 @@ export class ExploreView {
   cameraLocked = false;
   /** 停在码头 / 栈桥边的云舟；家园岛在引导前三步是失事的残骸。 */
   private skiff: { view: SkiffView; wrecked: boolean } | null = null;
+  /**
+   * 商队修船播片（v0.10）期间残骸留着不换：引导第 3 步、还没看过 'repair' 播片时自动成立；
+   * 播片开始时置为 true（发出“看过”意图后也不换），播到转场那一刻 endRepair() 才换成修好的云舟。
+   */
+  repairHold = false;
+  /**
+   * 修船播片里的商队（v0.11，只做表现）：大船、舷梯（extend 0..1）、甲板上的船员（挂在船上）、
+   * 上了岸的人（本岛坐标，沿路点走、到了干活）、放在地上的木板堆和工具箱；departing = 修完起飞。
+   */
+  private caravan: {
+    ship: CaravanShipView;
+    spot: { x: number; z: number; yaw: number; y: number };
+    gangway: GangwayView;
+    extend: number;
+    extendTarget: number;
+    drop: number;
+    crew: Map<string, HumanoidView>;
+    ashore: Map<string, CrewWalker>;
+    props: THREE.Object3D[];
+    departing: boolean;
+  } | null = null;
   /** 失事残骸停下的位置与朝向（开场迫降的终点）。 */
   static readonly WRECK = { x: 3.5, z: 11, yaw: 0.9 + Math.PI } as const;
   /** 停泊位置（相对码头 / 登岛点）：船身连推进舱都不压到码头 / 栈桥上。 */
@@ -174,18 +208,16 @@ export class ExploreView {
   extraInteractables: Interactable[] = [];
   private t = 0;
   private autopilot: Autopilot | null = null;
+  /** 正在做的编排跳跃（leapTo）：落地后缓一下再结束。 */
+  private leap: { x: number; z: number; resolve: () => void; flown: boolean; settle: number; timeout: number; speed: number } | null = null;
   /** 乘着一个移动的物体（开场迫降时站在云舟甲板上）：每帧把玩家放到它的座位上。 */
   private riding: { group: THREE.Object3D; seat: THREE.Vector3; yaw: number } | null = null;
   /** 发光的云气团（引导第 1 步，第一只絮灵）。 */
   private orb: THREE.Group | null = null;
   /** 只做表现的临时絮灵（例如首战前冲过来的蚀化絮灵）。 */
   private readonly actors = new Map<string, CreatureView>();
-  /** 水波纹（v0.7）：游泳 / 涉水时在水面上扩散的圆环。 */
-  private readonly ripples: Array<{ mesh: THREE.Mesh; t: number }> = [];
-  private rippleTimer = 0;
   /** 队伍里有受伤的絮灵（核心塔附近会冒治疗光点）。 */
   private partyHurt = false;
-  private lastSwim = 0;
   /** 从混沌迷雾中凝聚出来的临时絮灵（v0.7）：进度 0..1，凝聚完成后回调。 */
   private readonly mists = new Map<string, { t: number; dur: number; x: number; z: number; done: (() => void) | null }>();
 
@@ -288,11 +320,10 @@ export class ExploreView {
     return this.groundAt(x, z, this.player.feetY);
   };
 
-  /** 絮灵用的地面：矮平台（码头、栈桥）、上了船的站在甲板上，深水里浮在水面。 */
+  /** 絮灵用的地面：矮平台（码头、栈桥）、上了船的站在甲板上。 */
   private creatureGround(aboard: boolean): (x: number, z: number) => number {
     return (x, z) => {
       let h = this.terrain.height(x, z);
-      if (this.terrain.isWater(x, z) && WATER_LEVEL - h > 0.35) h = WATER_LEVEL - 0.3;
       for (const pl of this.platforms) {
         if (pl.wall && !aboard) continue;
         const l = this.platformLocal(pl, x, z);
@@ -466,6 +497,11 @@ export class ExploreView {
     this.trench.visible = k > 0.01;
   }
 
+  /** 停着的云舟还是不是残骸（测试用）。 */
+  get skiffWrecked(): boolean {
+    return !!this.skiff?.wrecked;
+  }
+
   /** 失事云舟（开场播片用）。 */
   get skiffView(): SkiffView | null {
     return this.skiff?.view ?? null;
@@ -588,7 +624,8 @@ export class ExploreView {
     this.player.setNight(n);
 
     // 云舟：家园岛在引导前三步是残骸（被商队修好之前），之后停在码头边
-    const wantWreck = this.isHome && !c.tutorial.done && c.tutorial.step < 3;
+    const repairPending = c.tutorial.step === 3 && !c.seenCutscenes.includes('repair');
+    const wantWreck = this.isHome && !c.tutorial.done && (c.tutorial.step < 3 || repairPending || this.repairHold);
     if (!this.skiff || this.skiff.wrecked !== wantWreck) this.placeSkiff(wantWreck);
     this.ensureOrb(this.isHome && !c.tutorial.done && c.tutorial.step <= 1 && Object.keys(c.spirits).length === 0);
 
@@ -810,22 +847,53 @@ export class ExploreView {
   }
 
   /** 让玩家自动走到某点（可选：途中起跳、到达后转向）。超时则直接放到目标点。 */
-  walkTo(x: number, z: number, opts: { run?: boolean; jumpAt?: number; jumpStrength?: number; faceYaw?: number; timeout?: number } = {}): Promise<void> {
+  walkTo(x: number, z: number, opts: { run?: boolean; faceYaw?: number; timeout?: number } = {}): Promise<void> {
     this.autopilot?.resolve();
     return new Promise((resolve) => {
-      this.autopilot = { x, z, run: !!opts.run, jumpAt: opts.jumpAt, jumpStrength: opts.jumpStrength, faceYaw: opts.faceYaw, resolve, timeout: opts.timeout ?? 6 };
+      this.autopilot = { x, z, run: !!opts.run, faceYaw: opts.faceYaw, resolve, timeout: opts.timeout ?? 6 };
     });
   }
 
-  /** 取消自动驾驶（跳过播片时）。 */
+  /**
+   * 编排好的一跳（v0.10，开场跳下失事的云舟；v0.11 改成专门的大跳姿势）：朝落点深蹲蓄力、双臂后摆
+   * → 蹬地、手臂前甩、提膝，抛物线越过船舷（顶点比起跳点高 height 米）→ 双腿前伸落地、深蹲缓冲、扬起尘土
+   * → 站起来。飞行时间按重力算好，水平速度刚好落到 (x, z)；跳的途中船舷不挡。
+   */
+  leapTo(x: number, z: number, height = 1.05): Promise<void> {
+    this.cancelWalk();
+    this.riding = null;
+    const P = this.player;
+    const dx = x - P.x;
+    const dz = z - P.z;
+    const drop = P.feetY - this.ground(x, z);
+    // 与 HumanoidView 的重力（13 m/s²）一致；蹲下蓄力时站着不动，起跳那一刻才带上水平速度
+    const v = Math.sqrt(2 * 13 * height);
+    const T = (v + Math.sqrt(Math.max(0, v * v + 2 * 13 * drop))) / 13;
+    const WINDUP = 0.42;
+    return new Promise((resolve) => {
+      P.yaw = Math.atan2(dx, dz);
+      P.speed = 0;
+      if (!P.jump(v, WINDUP, true)) {
+        P.setPosition(x, z, P.yaw);
+        resolve();
+        return;
+      }
+      this.leap = { x, z, resolve, flown: false, settle: ExploreView.LEAP_SETTLE, timeout: WINDUP + T + 2, speed: Math.hypot(dx, dz) / T };
+    });
+  }
+
+  /** 取消自动驾驶与编排跳跃（跳过播片时）。 */
   cancelWalk(): void {
     const ap = this.autopilot;
     this.autopilot = null;
     ap?.resolve();
+    const L = this.leap;
+    this.leap = null;
+    L?.resolve();
   }
 
   get scripted(): boolean {
-    return !!this.autopilot || !!this.riding;
+    return !!this.autopilot || !!this.riding || !!this.leap;
   }
 
   /** 云舟局部坐标 → 本岛坐标。 */
@@ -1082,8 +1150,6 @@ export class ExploreView {
       v.speed = lerp(v.speed, speed, Math.min(1, dt * 8));
       if (d > 0.1) v.yaw += angDiff(v.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 8);
       else v.yaw += angDiff(v.yaw, o.target.yaw) * Math.min(1, dt * 4);
-      const depth = this.terrain.isWater(v.x, v.z) ? Math.max(0, WATER_LEVEL - this.terrain.height(v.x, v.z)) : 0;
-      v.water = { y: WATER_LEVEL, depth };
       v.update(dt, t, (x, z) => this.groundAt(x, z, v.feetY));
       o.followers.forEach((f, i) => {
         const bx = v.x - Math.sin(v.yaw) * (1.3 + i * 0.6) + Math.cos(v.yaw) * (i ? 0.8 : -0.8);
@@ -1160,6 +1226,383 @@ export class ExploreView {
     this.actors.delete(id);
   }
 
+  // ---------------------------------------------------------------- 商队修船（v0.10，v0.11 重做）
+
+  /** 失事云舟局部坐标 → 本岛坐标（含残骸的倾斜）。 */
+  private wreckPoint(lx: number, ly: number, lz: number): THREE.Vector3 {
+    const g = this.skiff!.view.group;
+    g.updateMatrixWorld(true);
+    return this.root.worldToLocal(g.localToWorld(new THREE.Vector3(lx, ly, lz)));
+  }
+
+  /** 商队大船局部坐标 → 本岛坐标（只算位置与偏航，用于落点、舷梯、走路）。 */
+  private caravanToLocal(c: { x: number; z: number; yaw: number }, lx: number, lz: number): { x: number; z: number } {
+    const cy = Math.cos(c.yaw);
+    const sy = Math.sin(c.yaw);
+    return { x: c.x + lx * cy + lz * sy, z: c.z - lx * sy + lz * cy };
+  }
+
+  /** 舷梯的水平长度（米）。 */
+  private static readonly CARAVAN_RUN = 3.2;
+
+  /**
+   * 商队大船停在哪里：残骸周围 9–11 米一圈里找一处，右舷登船口朝着残骸；
+   * 船身（11 米长）不压到水、码头、停泊处、岛核、残骸和玩家，可以悬在岛边上一点（它是浮空的）；
+   * 舷梯脚和见面的地方要在岛上的干地。越远离码头越好（码头在镜头里会挡）。
+   */
+  caravanSpot(): { x: number; z: number; yaw: number; y: number } {
+    const W = ExploreView.WRECK;
+    const berth = { x: HOME_DOCK.x + ExploreView.BERTH_HOME.dx, z: HOME_DOCK.z + ExploreView.BERTH_HOME.dz };
+    const P = this.player;
+    const T = this.terrain;
+    const onIsland = (x: number, z: number, k: number) => Math.hypot(x, z) < T.rim(Math.atan2(z, x)) * k;
+    const clear = (x: number, z: number, r: number) =>
+      T.waterDistance(x, z) > r && Math.hypot(x - HOME_DOCK.x, z - HOME_DOCK.z) > 3.5 + r && Math.hypot(x - berth.x, z - berth.z) > 3.5 + r && Math.hypot(x, z) > 3 + r && Math.hypot(x - W.x, z - W.z) > 3 + r;
+    let best: { x: number; z: number; yaw: number; y: number; score: number } | null = null;
+    for (const d of [9, 10, 11]) {
+      for (let i = 0; i < 32; i++) {
+        const a = (i / 32) * Math.PI * 2;
+        const c = { x: W.x + Math.sin(a) * d, z: W.z + Math.cos(a) * d, yaw: 0 };
+        c.yaw = Math.atan2(-(W.z - c.z), W.x - c.x);
+        let ok = true;
+        let top = -Infinity;
+        for (const lx of [-1.9, 0, 1.9]) {
+          for (const lz of [-5, -2.5, 0, 2.5, 5.6]) {
+            const p = this.caravanToLocal(c, lx, lz);
+            if (!onIsland(p.x, p.z, 0.95) || !clear(p.x, p.z, 0.5) || Math.hypot(p.x - P.x, p.z - P.z) < 2) ok = false;
+            else if (onIsland(p.x, p.z, 0.8)) top = Math.max(top, T.height(p.x, p.z));
+          }
+        }
+        const foot = this.caravanToLocal(c, caravanHalfWidth(CARAVAN_GATE.z) + ExploreView.CARAVAN_RUN + 3, CARAVAN_GATE.z);
+        if (!ok || !T.inside(foot.x, foot.z, 1) || T.waterDistance(foot.x, foot.z) < 1.5) continue;
+        const score = Math.hypot(c.x - HOME_DOCK.x, c.z - HOME_DOCK.z) - d * 0.3;
+        if (!best || score > best.score) best = { ...c, y: (top === -Infinity ? T.height(c.x, c.z) : top) + 0.55, score };
+      }
+    }
+    if (best) return { x: best.x, z: best.z, yaw: best.yaw, y: best.y };
+    const x = W.x - 9;
+    return { x, z: W.z, yaw: Math.atan2(0, W.x - x), y: T.height(x, W.z) + 0.55 };
+  }
+
+  /** 商队的人：领队与两位伙计会下船，掌舵的、瞭望的和一位水手留在船上。 */
+  private static readonly CARAVAN_CREW: ReadonlyArray<{ id: string; look: HumanoidLook; at: [number, number]; yaw: number }> = [
+    { id: 'leader', look: { skinTone: '#d8b08c', hairColor: '#9a948c', clothColor: '#2f6f6a', scarfColor: '#5cc8a0', height: 1.02 }, at: [0.9, -0.5], yaw: Math.PI / 2 },
+    { id: 'mu', look: { skinTone: '#e8c4a0', hairColor: '#3b2a20', clothColor: '#3f7f86', scarfColor: '#f3b94d' }, at: [1.1, 0.7], yaw: Math.PI / 2 },
+    { id: 'man', look: { skinTone: '#c99a74', hairColor: '#6b4a35', clothColor: '#5c8a6a', scarfColor: '#e9e3d0', height: 0.94 }, at: [0.6, 1.2], yaw: Math.PI / 2 },
+    { id: 'helm', look: { skinTone: '#b98a64', hairColor: '#2a211c', clothColor: '#2f5f5a', scarfColor: '#e07a5f' }, at: [0, -4.6], yaw: 0 },
+    { id: 'lookout', look: { skinTone: '#f0d2b4', hairColor: '#c9a35a', clothColor: '#3f8a86', scarfColor: '#5cc8a0', height: 0.92 }, at: [0.4, 4.3], yaw: 0.3 },
+    { id: 'sailor', look: { skinTone: '#a87a58', hairColor: '#3b2a20', clothColor: '#5c8a6a', scarfColor: '#f3b94d' }, at: [-0.6, 0.6], yaw: Math.PI / 2 + 0.3 },
+  ];
+
+  /** 商队大船（带船员）。返回模型，播片按时间用 placeCaravan 摆它的位置。 */
+  spawnCaravan(spot: { x: number; z: number; yaw: number; y: number }): CaravanShipView {
+    this.removeCaravan();
+    const ship = makeCaravanShip();
+    for (const g of ship.glows) this.env.glowMaterials.add(g);
+    const gangway = makeGangway();
+    gangway.group.position.set(caravanHalfWidth(CARAVAN_GATE.z) - 0.05, CARAVAN_DECK_Y, CARAVAN_GATE.z);
+    ship.deck.add(gangway.group);
+    gangway.set(ExploreView.CARAVAN_RUN, 1, 0);
+    const crew = new Map<string, HumanoidView>();
+    for (const c of ExploreView.CARAVAN_CREW) {
+      const v = new HumanoidView(c.look);
+      v.setPosition(c.at[0], c.at[1], c.yaw, caravanFloorAt(c.at[0], c.at[1]) ?? CARAVAN_DECK_Y);
+      ship.deck.add(v.group);
+      crew.set(c.id, v);
+    }
+    this.root.add(ship.group);
+    this.caravan = { ship, spot, gangway, extend: 0, extendTarget: 0, drop: 1, crew, ashore: new Map(), props: [], departing: false };
+    this.placeCaravan(new THREE.Vector3(spot.x, spot.y, spot.z), 0);
+    return ship;
+  }
+
+  /** 播片按时间摆大船（落下 / 起飞）。 */
+  placeCaravan(p: THREE.Vector3, pitch: number): void {
+    const cv = this.caravan;
+    if (!cv) return;
+    cv.ship.group.position.copy(p);
+    cv.ship.group.rotation.set(pitch, cv.spot.yaw, 0, 'YXZ');
+  }
+
+  /** 商队里某个人（本岛坐标下的头顶位置，给镜头用）。 */
+  caravanPerson(id: string): THREE.Vector3 | null {
+    const cv = this.caravan;
+    if (!cv) return null;
+    const a = cv.ashore.get(id);
+    if (a) return new THREE.Vector3(a.view.x, a.view.feetY + 1.55, a.view.z);
+    const v = cv.crew.get(id);
+    if (!v) return null;
+    v.group.updateMatrixWorld(true);
+    return this.root.worldToLocal(v.group.localToWorld(new THREE.Vector3(0, 1.55, 0)));
+  }
+
+  /** 舷梯脚、见面处（领队站的地方、玩家站的地方）与伙计等着的地方（本岛坐标）。 */
+  caravanMeet(): { foot: THREE.Vector3; leader: THREE.Vector3; player: THREE.Vector3; mu: THREE.Vector3; man: THREE.Vector3 } {
+    const s = this.caravan!.spot;
+    const hw = caravanHalfWidth(CARAVAN_GATE.z);
+    const at = (lx: number, lz: number) => {
+      const p = this.caravanToLocal(s, lx, lz);
+      return new THREE.Vector3(p.x, this.ground(p.x, p.z), p.z);
+    };
+    const run = ExploreView.CARAVAN_RUN;
+    return { foot: at(hw + run, CARAVAN_GATE.z), leader: at(hw + run + 1.1, CARAVAN_GATE.z), player: at(hw + run + 2.6, CARAVAN_GATE.z), mu: at(hw + run - 0.6, CARAVAN_GATE.z + 2.0), man: at(hw + run - 0.7, CARAVAN_GATE.z - 1.9) };
+  }
+
+  /** 大船落稳：放下舷梯（按船底离地的高差算倾角）。 */
+  lowerCaravanGangway(): void {
+    const cv = this.caravan;
+    if (!cv) return;
+    const m = this.caravanMeet();
+    cv.drop = cv.spot.y + CARAVAN_DECK_Y - m.foot.y;
+    cv.extendTarget = 1;
+  }
+
+  /**
+   * 船上的人走下舷梯（换到本岛坐标），沿 path 走；每个路点可带一个到达时的回调。
+   * 已经上岸的人直接换一条新的路。
+   */
+  crewWalk(id: string, path: ReadonlyArray<{ x: number; z: number; then?: () => void }>, face?: () => number): void {
+    const cv = this.caravan;
+    if (!cv) return;
+    let a = cv.ashore.get(id);
+    if (!a) {
+      const v = cv.crew.get(id);
+      if (!v) return;
+      v.group.updateMatrixWorld(true);
+      const w = this.root.worldToLocal(v.group.localToWorld(new THREE.Vector3()));
+      cv.ship.deck.remove(v.group);
+      cv.crew.delete(id);
+      v.setPosition(w.x, w.z, v.yaw + cv.spot.yaw, w.y);
+      this.root.add(v.group);
+      // 先走到登船口、再下舷梯
+      const s = cv.spot;
+      const hw = caravanHalfWidth(CARAVAN_GATE.z);
+      const gate = this.caravanToLocal(s, hw - 0.3, CARAVAN_GATE.z);
+      const foot = this.caravanToLocal(s, hw + ExploreView.CARAVAN_RUN + 0.3, CARAVAN_GATE.z);
+      a = { view: v, path: [gate, foot], face: null, work: null, at: null };
+      cv.ashore.set(id, a);
+    }
+    a.path.push(...path);
+    a.face = face ?? null;
+    a.work = null;
+  }
+
+  /** 上岸的人到了地方开始干活：钉（蹲下用锤子）或锯；at = 敲 / 锯的位置（木屑从这里飞出）。 */
+  crewWork(id: string, work: 'hammer' | 'saw', at: THREE.Vector3): void {
+    const a = this.caravan?.ashore.get(id);
+    if (!a) return;
+    a.work = work;
+    a.at = at;
+  }
+
+  /** 拿着的东西 / 说话手势 / 看向谁。 */
+  crewPose(id: string, opts: { carry?: CarryKind | null; raised?: boolean; talking?: boolean; lookAt?: { x: number; z: number } | null; wave?: boolean }): void {
+    const cv = this.caravan;
+    const v = cv?.ashore.get(id)?.view ?? cv?.crew.get(id);
+    if (!v) return;
+    if (opts.carry !== undefined) v.carry = opts.carry;
+    if (opts.raised !== undefined) v.raised = opts.raised;
+    if (opts.talking !== undefined) v.talking = opts.talking;
+    if (opts.lookAt !== undefined) v.lookAt = opts.lookAt;
+    if (opts.wave) v.waveHand();
+  }
+
+  /** 修船的几个地方（本岛坐标）：残骸朝大船那一舷的破洞、木板堆、锯木头的地方、上残骸甲板的路、桅杆下。 */
+  repairSpots(): { hole: THREE.Vector3; kneel: { x: number; z: number; face: number }; pile: { x: number; z: number }; box: { x: number; z: number }; saw: { x: number; z: number; face: number }; boardPath: Array<{ x: number; z: number }>; mast: { x: number; z: number; face: number }; core: THREE.Vector3; side: 1 | -1 } {
+    const sk = this.skiff!.view;
+    const cv = this.caravan!;
+    // 大船在残骸的哪一舷
+    const W = ExploreView.WRECK;
+    const dx = cv.spot.x - W.x;
+    const dz = cv.spot.z - W.z;
+    const side: 1 | -1 = dx * Math.cos(W.yaw) - dz * Math.sin(W.yaw) >= 0 ? 1 : -1;
+    const holes = sk.holes.filter((h) => Math.sign(h.x) === side);
+    const h = (holes.length ? holes : sk.holes).reduce((a, b) => (b.y > a.y ? b : a), sk.holes[0] ?? new THREE.Vector3(side * 0.8, 0.5, 0));
+    const hole = this.wreckPoint(h.x, h.y, h.z);
+    const k = this.skiffToLocal(side * (skiffHalfWidth(h.z) + 0.55), h.z);
+    const gz = (SKIFF_GATE.z0 + SKIFF_GATE.z1) / 2;
+    const pile = this.skiffToLocal(side * (skiffHalfWidth(0.9) + 1.9), 1.5);
+    const box = this.skiffToLocal(side * (skiffHalfWidth(0.9) + 1.7), 0.5);
+    const saw = this.skiffToLocal(side * (skiffHalfWidth(0.9) + 2.55), 1.5);
+    const mastLocal = { x: side * 0.32, z: -0.4 };
+    const mast = this.skiffToLocal(mastLocal.x, mastLocal.z);
+    const coreAt = this.wreckPoint(0, 2.87, -0.75);
+    return {
+      hole,
+      kneel: { ...k, face: Math.atan2(hole.x - k.x, hole.z - k.z) },
+      pile,
+      box,
+      saw: { ...saw, face: Math.atan2(pile.x - saw.x, pile.z - saw.z) },
+      boardPath: [this.skiffToLocal(side * (skiffHalfWidth(gz) + 0.9), gz), this.skiffToLocal(side * (skiffHalfWidth(gz) - 0.3), gz), mast],
+      mast: { ...mast, face: Math.atan2(coreAt.x - mast.x, coreAt.z - mast.z) },
+      core: coreAt,
+      side,
+    };
+  }
+
+  /** 放下扛来的东西：木板堆 / 工具箱（只做表现，播片结束时收走）。 */
+  dropCargo(kind: 'planks' | 'box', at: { x: number; z: number }): void {
+    const cv = this.caravan;
+    if (!cv) return;
+    const g = new THREE.Group();
+    const y = this.ground(at.x, at.z);
+    if (kind === 'planks') {
+      for (let i = 0; i < 4; i++) {
+        const p = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.035, 1.7), mat(i % 2 ? 0xd9b27c : 0xc99f6a));
+        p.position.set((i % 2) * 0.12 - 0.06, 0.03 + i * 0.04, (i - 1.5) * 0.05);
+        p.rotation.y = (i - 1.5) * 0.06;
+        p.castShadow = true;
+        g.add(p);
+      }
+    } else {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.22, 0.25), mat(0x8a5f40));
+      b.position.y = 0.11;
+      b.castShadow = true;
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(0.47, 0.04, 0.27), mat(0x5a3e2c));
+      lid.position.y = 0.23;
+      g.add(b, lid);
+    }
+    g.position.set(at.x, y, at.z);
+    g.rotation.y = this.skiff?.view.group.rotation.y ?? 0;
+    this.root.add(g);
+    cv.props.push(g);
+  }
+
+  /** 残骸的修补进度（新木板一块块钉上）与核心亮度（新晶体装上后亮起来）。 */
+  setWreckRepair(k: number, core?: number): void {
+    if (!this.skiff?.wrecked) return;
+    this.skiff.view.setRepair(k);
+    if (core !== undefined) this.skiff.view.setCore(core);
+  }
+
+  /** 播片里让玩家看向某处（null = 恢复看最近的絮灵）。 */
+  playerLook: { x: number; z: number } | null = null;
+
+  /** 走路 / 站立的高度：残骸甲板、大船甲板与舷梯、地面。 */
+  private crewGround = (x: number, z: number): number => {
+    const cv = this.caravan;
+    if (cv) {
+      const dx = x - cv.spot.x;
+      const dz = z - cv.spot.z;
+      const lx = dx * Math.cos(cv.spot.yaw) - dz * Math.sin(cv.spot.yaw);
+      const lz = dx * Math.sin(cv.spot.yaw) + dz * Math.cos(cv.spot.yaw);
+      const top = cv.ship.group.position.y + CARAVAN_DECK_Y;
+      const floor = caravanFloorAt(lx, lz);
+      if (floor !== null) return cv.ship.group.position.y + floor;
+      const hw = caravanHalfWidth(CARAVAN_GATE.z) - 0.1;
+      const run = ExploreView.CARAVAN_RUN;
+      if (cv.extend > 0.95 && lx >= hw && lx <= hw + run && Math.abs(lz - CARAVAN_GATE.z) < 0.45) return Math.max(this.ground(x, z), top - (cv.drop * (lx - hw)) / run);
+    }
+    const sk = this.skiff;
+    if (sk?.wrecked) {
+      const g = sk.view.group;
+      const ddx = x - g.position.x;
+      const ddz = z - g.position.z;
+      const yaw = g.rotation.y;
+      const lx = ddx * Math.cos(yaw) - ddz * Math.sin(yaw);
+      const lz = ddx * Math.sin(yaw) + ddz * Math.cos(yaw);
+      if (Math.abs(lx) < skiffHalfWidth(lz) - 0.12) return this.wreckPoint(lx, SKIFF_DECK_Y, lz).y;
+    }
+    return this.ground(x, z);
+  };
+
+  private updateCaravan(dt: number, t: number): void {
+    const cv = this.caravan;
+    if (!cv) return;
+    cv.ship.update(t, cv.departing ? 0.6 : 0.2);
+    // 舷梯伸出 / 收起
+    cv.extend += clamp(cv.extendTarget - cv.extend, -dt * 1.2, dt * 1.2);
+    cv.gangway.set(ExploreView.CARAVAN_RUN, cv.drop, cv.extend);
+    for (const [, v] of cv.crew) {
+      if (cv.departing && Math.random() < dt * 0.7) v.waveHand();
+      v.update(dt, t, (x, z) => caravanFloorAt(x, z) ?? CARAVAN_DECK_Y);
+    }
+    for (const a of cv.ashore.values()) {
+      const v = a.view;
+      const next = a.path[0];
+      if (next) {
+        const dx = next.x - v.x;
+        const dz = next.z - v.z;
+        const d = Math.hypot(dx, dz);
+        if (d < 0.12) {
+          a.path.shift();
+          next.then?.();
+        } else {
+          v.speed = lerp(v.speed, Math.min(2.4, d * 3 + 0.6), Math.min(1, dt * 6));
+          v.yaw += angDiff(v.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 8);
+          const step = Math.min(d, v.speed * dt);
+          v.x += (dx / d) * step;
+          v.z += (dz / d) * step;
+        }
+      } else {
+        v.speed = lerp(v.speed, 0, Math.min(1, dt * 10));
+        if (a.face) v.yaw += angDiff(v.yaw, a.face()) * Math.min(1, dt * 6);
+        if (a.work && a.at && !v.busy) {
+          const at = a.at;
+          v.playAction(a.work, () => {
+            // 木屑（钉）/ 锯末（锯）
+            if (a.work === 'hammer') this.fx.spawn('spark', at, 4, { size: 0.12, vy: 1.2, life: 0.45, spread: 0.6, color: 0xc99f6a });
+            else this.fx.spawn('puff', at, 2, { size: 0.25, vy: 0.4, life: 0.8, spread: 0.4, color: 0xe9d6a8 });
+          });
+        }
+      }
+      v.update(dt, t, this.crewGround);
+    }
+  }
+
+  private removeCaravan(): void {
+    const cv = this.caravan;
+    if (!cv) return;
+    for (const g of cv.ship.glows) this.env.glowMaterials.delete(g);
+    this.root.remove(cv.ship.group);
+    for (const v of cv.crew.values()) v.dispose();
+    for (const a of cv.ashore.values()) {
+      this.root.remove(a.view.group);
+      a.view.dispose();
+    }
+    for (const p of cv.props) this.root.remove(p);
+    this.caravan = null;
+    this.playerLook = null;
+  }
+
+  /**
+   * 收工（转场时调用）：上岸的人回到船上原来的位置、木板堆和工具箱收走、舷梯收起，
+   * 残骸换成停在码头边的修好的云舟。之后大船可以起飞（departing：船上的人挥手）。
+   */
+  finishRepair(): void {
+    const cv = this.caravan;
+    if (cv) {
+      for (const [id, a] of cv.ashore) {
+        this.root.remove(a.view.group);
+        const c = ExploreView.CARAVAN_CREW.find((m) => m.id === id)!;
+        a.view.carry = null;
+        a.view.raised = false;
+        a.view.talking = false;
+        a.view.lookAt = null;
+        a.view.speed = 0;
+        a.view.setPosition(c.at[0], c.at[1], c.yaw, caravanFloorAt(c.at[0], c.at[1]) ?? CARAVAN_DECK_Y);
+        cv.ship.deck.add(a.view.group);
+        cv.crew.set(id, a.view);
+      }
+      cv.ashore.clear();
+      for (const p of cv.props) this.root.remove(p);
+      cv.props = [];
+      cv.extend = cv.extendTarget = 0;
+      cv.departing = true;
+    }
+    this.playerLook = null;
+    this.repairHold = false;
+    if (this.skiff?.wrecked) this.placeSkiff(false);
+  }
+
+  /** 修船播片结束（或跳过）：商队离开，残骸一定已换成修好的云舟。 */
+  endRepair(): void {
+    // 跳过时玩家可能还在往见面处走
+    this.cancelWalk();
+    this.finishRepair();
+    this.removeCaravan();
+  }
+
   // ---------------------------------------------------------------- 每帧
 
   /** 每帧：玩家移动、镜头、絮灵游荡、交互检测。 */
@@ -1179,14 +1622,6 @@ export class ExploreView {
       const dx = ap.x - P.x;
       const dz = ap.z - P.z;
       const d = Math.hypot(dx, dz);
-      if (ap.jumpAt !== undefined && !ap.jumped && d < ap.jumpAt) {
-        ap.jumped = P.jump(ap.jumpStrength);
-        // 起跳时朝着落点、带上刚好够的水平速度（站定起跳也能跳过去）
-        if (ap.jumped) {
-          P.yaw = Math.atan2(dx, dz);
-          P.speed = Math.max(P.speed, d / 0.8);
-        }
-      }
       if ((d < 0.18 && !P.airborne) || ap.timeout <= 0) {
         if (ap.timeout <= 0) P.setPosition(ap.x, ap.z, P.yaw, this.groundAt(ap.x, ap.z, 99));
         if (ap.faceYaw !== undefined) P.yaw = ap.faceYaw;
@@ -1218,14 +1653,7 @@ export class ExploreView {
       mz = rz * ix + fz * iy;
       if (input.hit('Space')) P.jump();
     }
-    // 水深：涉水变慢，深水游泳
-    const inWater = this.terrain.isWater(P.x, P.z) && !this.riding;
-    const depth = inWater ? Math.max(0, WATER_LEVEL - this.terrain.height(P.x, P.z)) : 0;
-    P.water = { y: WATER_LEVEL, depth: P.feetY > WATER_LEVEL + 0.3 && P.airborne ? 0 : depth };
-    const wade = clamp(depth / HumanoidView.SWIM_DEPTH, 0, 1);
-    const landSpeed = (run ? 4.6 : 3.1) * (1 - 0.45 * wade * (1 - P.swim));
-    const swimSpeed = run ? 2.1 : 1.5;
-    const top = lerp(landSpeed, swimSpeed, P.swim);
+    const top = run ? 4.6 : 3.1;
     // 做动作时站定；空中保持起跳时的速度
     const target = P.busy ? 0 : mag * top;
     if (this.riding) {
@@ -1238,7 +1666,7 @@ export class ExploreView {
       P.yaw = e.y + r.yaw;
     } else {
       if (!P.airborne) P.speed = lerp(P.speed, target, Math.min(1, dt * (target > P.speed ? 6 : 9)));
-      if (mag > 0.08 && !P.busy) P.yaw += angDiff(P.yaw, Math.atan2(mx, mz)) * Math.min(1, dt * (P.airborne ? 3 : P.swimming ? 4 : 10));
+      if (mag > 0.08 && !P.busy) P.yaw += angDiff(P.yaw, Math.atan2(mx, mz)) * Math.min(1, dt * (P.airborne ? 3 : 10));
       P.x += Math.sin(P.yaw) * P.speed * dt;
       P.z += Math.cos(P.yaw) * P.speed * dt;
     }
@@ -1267,6 +1695,7 @@ export class ExploreView {
       }
       this.collidePlatforms(prev);
       for (const { node } of this.props.values()) push(P, node.x, node.z, node.kind === 'tree' ? 0.55 : 0.6);
+      this.keepOutOfWater(P, prev);
       const th = Math.atan2(P.z, P.x);
       const lim = this.terrain.rim(th) * 0.8;
       const rr = Math.hypot(P.x, P.z);
@@ -1285,10 +1714,10 @@ export class ExploreView {
         best = { x: view.x, z: view.z };
       }
     }
-    P.lookAt = best;
+    P.lookAt = this.playerLook ?? best;
     P.update(dt, t, this.playerGround);
+    this.updateLeap(dt);
     setWaterTint(this.root.position.y + WATER_LEVEL);
-    this.updateWaterFx(dt, depth);
     // 核心塔附近：受伤的队伍絮灵身上升起暖色光点（与 sim 的 CORE_HEAL 半径一致）
     if (this.isHome && this.partyHurt && Math.hypot(P.x, P.z) <= 6) {
       for (const e of this.creatures.values()) {
@@ -1321,8 +1750,8 @@ export class ExploreView {
         const slot = followIdx++;
         const bx = P.x - Math.sin(P.yaw) * (1.4 + slot * 0.6) + Math.cos(P.yaw) * (slot - 1) * 0.9;
         const bz = P.z - Math.cos(P.yaw) * (1.4 + slot * 0.6) - Math.sin(P.yaw) * (slot - 1) * 0.9;
-        if (Math.hypot(bx - v.x, bz - v.z) > 0.8) v.moveTo(bx, bz);
-        if (Math.hypot(P.x - v.x, P.z - v.z) > 12) v.setPosition(bx, bz, P.yaw);
+        if (Math.hypot(bx - v.x, bz - v.z) > 0.8 && !this.wet(bx, bz)) v.moveTo(bx, bz);
+        if (Math.hypot(P.x - v.x, P.z - v.z) > 12 && !this.wet(bx, bz)) v.setPosition(bx, bz, P.yaw);
         v.lookAt = { x: P.x, z: P.z };
       } else {
         e.timer -= dt;
@@ -1345,9 +1774,13 @@ export class ExploreView {
           if (l) push(v, sp.x, sp.z, Math.hypot(l.lx, l.lz) + 0.4);
         }
       }
+      const before = { x: v.x, z: v.z };
       v.update(dt, t, e.aboard ? groundAboard : groundFloat);
+      // 絮灵也不下水：走到岸边就停住（v0.10）
+      if (!e.aboard) this.keepOutOfWater(v, before);
     }
     for (const v of this.actors.values()) v.update(dt, t, groundFloat);
+    this.updateCaravan(dt, t);
     for (const [id, m] of this.mists) {
       m.t += dt;
       const k = Math.min(1, m.t / m.dur);
@@ -1435,49 +1868,55 @@ export class ExploreView {
     this.updateNearest();
   }
 
-  /** 入水溅起水花；游泳 / 涉水时身边一圈圈的波纹（v0.7）。 */
-  private updateWaterFx(dt: number, depth: number): void {
+  private updateLeap(dt: number): void {
+    const L = this.leap;
+    if (!L) return;
     const P = this.player;
-    const at = new THREE.Vector3(P.x, WATER_LEVEL + 0.03, P.z);
-    if (P.swim > 0.5 && this.lastSwim <= 0.5) {
-      this.fx.spawn('puff', at.clone().add(new THREE.Vector3(0, 0.1, 0)), 14, { size: 0.45, vy: 2.2, life: 0.8, spread: 1.6, color: 0xeaf6ff });
-      this.spawnRipple(P.x, P.z, 1.4);
-    }
-    this.lastSwim = P.swim;
-    const wet = depth > 0.12 && !P.airborne;
-    if (wet) {
-      this.rippleTimer -= dt;
-      const moving = P.speed > 0.4;
-      if (this.rippleTimer <= 0) {
-        this.spawnRipple(P.x, P.z, P.swim > 0.5 ? 1 : 0.6);
-        this.rippleTimer = moving ? 0.35 : 1.1;
-        if (moving) this.fx.spawn('puff', at, P.swim > 0.5 ? 3 : 2, { size: 0.25, vy: 1.2, life: 0.5, spread: 0.6, color: 0xeaf6ff });
+    L.timeout -= dt;
+    if (P.offGround) {
+      // 离地那一刻带上水平速度（蓄力时站着不动）
+      if (!L.flown) P.speed = L.speed;
+      L.flown = true;
+    } else if (L.flown) {
+      // 落地那一刻：站住（不往前滑）、扬起尘土；缓冲到站起来再结束
+      if (L.settle === ExploreView.LEAP_SETTLE) {
+        P.speed = 0;
+        this.fx.spawn('puff', new THREE.Vector3(P.x, P.feetY + 0.1, P.z), 10, { size: 0.55, vy: 0.8, life: 0.9, spread: 1.4, color: 0xb59a7a });
       }
+      L.settle -= dt;
     }
-    for (let i = this.ripples.length - 1; i >= 0; i--) {
-      const r = this.ripples[i]!;
-      r.t += dt;
-      const k = r.t / 1.6;
-      r.mesh.scale.setScalar(0.3 + k * 2.2 * (r.mesh.userData['size'] as number));
-      (r.mesh.material as THREE.MeshBasicMaterial).opacity = 0.5 * (1 - k);
-      if (k >= 1) {
-        this.root.remove(r.mesh);
-        (r.mesh.material as THREE.Material).dispose();
-        this.ripples.splice(i, 1);
-      }
+    if (L.settle <= 0 || L.timeout <= 0) {
+      // 超时只是兜底（例如帧率极低）；正常落地时人已经在落点附近
+      if (L.timeout <= 0) P.setPosition(L.x, L.z, P.yaw);
+      P.speed = 0;
+      this.leap = null;
+      L.resolve();
     }
   }
 
-  private static rippleGeo = new THREE.RingGeometry(0.42, 0.5, 24).rotateX(-Math.PI / 2);
+  /** 大跳落地后缓多久才算跳完（与 HumanoidView 的落地缓冲一致）。 */
+  private static readonly LEAP_SETTLE = 0.6;
 
-  private spawnRipple(x: number, z: number, size: number): void {
-    if (this.ripples.length > 14) return;
-    const m = new THREE.Mesh(ExploreView.rippleGeo, new THREE.MeshBasicMaterial({ color: 0xf2faff, transparent: true, opacity: 0.5, depthWrite: false }));
-    m.position.set(x, WATER_LEVEL + 0.04, z);
-    m.userData['size'] = size;
-    m.renderOrder = 4;
-    this.root.add(m);
-    this.ripples.push({ mesh: m, t: 0 });
+  /** 离岸线多近算下水（米）：岸边留一点余量，脚不会踩进水里。 */
+  private static readonly SHORE_MARGIN = 0.3;
+
+  /** 这里是不是水（含岸边余量）。 */
+  private wet(x: number, z: number): boolean {
+    return this.terrain.waterDistance(x, z) < ExploreView.SHORE_MARGIN;
+  }
+
+  /**
+   * 不能下水（v0.10）：这一帧走进了水里就退回去；只退一个方向能出水就保留另一个方向的移动，
+   * 这样贴着岸走会沿岸线滑过去，而不是卡住。
+   */
+  private keepOutOfWater(o: { x: number; z: number }, prev: { x: number; z: number }): void {
+    if (!this.wet(o.x, o.z) || this.wet(prev.x, prev.z)) return;
+    if (!this.wet(o.x, prev.z)) o.z = prev.z;
+    else if (!this.wet(prev.x, o.z)) o.x = prev.x;
+    else {
+      o.x = prev.x;
+      o.z = prev.z;
+    }
   }
 
   /**
@@ -1518,7 +1957,7 @@ export class ExploreView {
       const gwSide = this.gangway && this.gangway.extend >= 0.95 ? this.gangway.side : 0;
       const inGateZ = lNow.lz > SKIFF_GATE.z0 + 0.1 && lNow.lz < SKIFF_GATE.z1 - 0.1;
       // 跳着从登船口出去也行（开场跳下失事的云舟）
-      const inGate = inGateZ && ((gwSide !== 0 && Math.sign(lNow.lx) === gwSide) || (!!this.autopilot?.jumped && P.airborne));
+      const inGate = inGateZ && ((gwSide !== 0 && Math.sign(lNow.lx) === gwSide) || (!!this.leap && P.airborne));
       const lim = skiffHalfWidth(lNow.lz) - 0.25;
       let lx = lNow.lx;
       let lz = clamp(lNow.lz, -1.95, 1.6);
@@ -1534,8 +1973,8 @@ export class ExploreView {
 
   private updateNearest(): void {
     const P = this.player;
-    // 游泳、上下船时不能交互
-    if (P.swimming || this.scripted) {
+    // 上下船时不能交互
+    if (this.scripted) {
       this.nearest = null;
       return;
     }
