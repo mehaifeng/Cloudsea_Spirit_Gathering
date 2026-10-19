@@ -101,7 +101,7 @@ prototype/      M0 单文件原型，只作参考，不再修改
 - 运行打包版：`pnpm build && pnpm --filter @cloudsea/desktop start`
 - 类型检查：`pnpm typecheck`
 - 单元测试：`pnpm test`（含 sim 纯度检查：禁止非相对导入、Math.random、Date 等）
-- 场景截图自查（v0.6 测试模式）：`pnpm scenes`（每个场景直接启动到某个画面并截图、做断言，几秒一个；`SCENES=swim,dock pnpm scenes` 只跑部分）。场景定义在 `apps/desktop/src/renderer/game/scenarios.ts`；手动看某个场景：`CLOUDSEA_TEST=1 CLOUDSEA_SCENE=swim pnpm dev`
+- 场景截图自查（v0.6 测试模式；v0.11 起用无头 Chromium，不弹窗口）：`pnpm scenes` 默认只跑和未提交改动有关的场景（映射在 `apps/desktop/scripts/scenes.mjs`），`pnpm scenes repair home` 只跑指定场景，`pnpm scenes all` 全量（只在里程碑交付前跑）。每个场景直接启动到某个画面并截图、做断言。场景定义在 `apps/desktop/src/renderer/game/scenarios.ts`；手动看某个场景：`CLOUDSEA_TEST=1 CLOUDSEA_SCENE=repair pnpm dev`
 - 截图冒烟 + 全流程回归 + 双窗口联机回归 + 灵性模式 + 手柄 + 英文界面：`pnpm smoke`（打包后用 Playwright 启动 Electron，按新手引导走一遍核心循环；截图存到 `apps/desktop/screenshots/`，不入库）
 - 平衡模拟：`pnpm --filter @cloudsea/battle-sim start [--matches 200] [--levels 1,10,30,60] [--json]`
 - 安装包（M4-4）：`pnpm --filter @cloudsea/desktop dist:win`（Windows NSIS，产物在 apps/desktop/release/）；`dist:dir` 出当前平台的免安装目录

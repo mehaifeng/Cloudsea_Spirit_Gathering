@@ -10,7 +10,7 @@
     "build": "vite build && tsc -p tsconfig.main.json",
     "start": "electron .",
     "smoke": "pnpm build && playwright test tests/smoke.spec.ts tests/playthrough.spec.ts tests/coop.spec.ts tests/spirit.spec.ts tests/gamepad.spec.ts tests/english.spec.ts",
-    "scenes": "pnpm build && playwright test tests/scenes.spec.ts",
+    "scenes": "node scripts/scenes.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.node.json",
     "icon": "electron scripts/icon.cjs",
     "dist:win": "pnpm build && electron-builder --win --x64 --publish never",
